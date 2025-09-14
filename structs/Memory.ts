@@ -1296,6 +1296,33 @@ class Memory {
 
     return this;
   }
+
+  /**
+   * Write a {@link Vector3} as three consecutive 32-bit little-endian floats at the target address.
+   *
+   * Layout:
+   * - +0x00 = x (float32)
+   * - +0x04 = y (float32)
+   * - +0x08 = z (float32)
+   *
+   * Uses `Memory.Scratch12` to avoid allocations and delegates to {@link writeBuffer}.
+   *
+   * @param address Destination address.
+   * @param value Vector with `x`, `y`, and `z` components to write.
+   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
+   * @returns `this` for chaining.
+   * @throws {Win32Error} If the underlying write or protection change fails.
+   */
+
+  public writeVector3(address: bigint | number, value: Vector3, force = false): this {
+    Memory.Scratch12.writeFloatLE(value.x);
+    Memory.Scratch12.writeFloatLE(value.y, 0x04);
+    Memory.Scratch12.writeFloatLE(value.z, 0x08);
+
+    this.writeBuffer(address, Memory.Scratch12, force);
+
+    return this;
+  }
 }
 
 export default Memory;
