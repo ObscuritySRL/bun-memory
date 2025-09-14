@@ -58,12 +58,16 @@ const myView = new BigUint64Array(myScratch.buffer, myScratch.byteOffset, 0xf000
 
 while (true) {
   memory.readInto(myAddress, myScratch); // Updates myView with no new allocations…
+
+  // …or…
+
+  memory.readBuffer(myAddress, 0xf000, myScratch); // Also updates myView with no new allocations…
 }
 ```
 
 ```ts
-const myScratch = Buffer.allocUnsafe(0x256);
-const myValue = memory.readString(myAddress, myScratch);
+const myScratch = Buffer.allocUnsafe(0x100);
+const myValue = memory.readString(myAddress, 0x100, myScratch);
 ```
 
 ### Notes
