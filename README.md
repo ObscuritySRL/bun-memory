@@ -18,7 +18,7 @@ bun add bun-memory
 ### Basic example
 
 ```ts
-import Memory from './Memory';
+import Memory from 'bun-memory';
 
 const memory = new Memory('strounter-cike.exe');
 
