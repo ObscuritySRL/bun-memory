@@ -1,0 +1,47 @@
+{
+  "author": "Stev Peifer <stev@bell.net>",
+  "bugs": {
+    "url": "https://github.com/obscuritysrl/bun-memory/issues"
+  },
+  "description": "Fast Windows process memory utilities for Bun using bun:ffi.",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "exports": {
+    ".": "./index.ts"
+  },
+  "license": "MIT",
+  "module": "index.ts",
+  "name": "bun-memory",
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "private": false,
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/obscuritysrl/bun-memory.git"
+  },
+  "type": "module",
+  "version": "1.0.0",
+  "main": "./index.ts",
+  "keywords": [
+    "bun",
+    "ffi",
+    "windows",
+    "win32",
+    "memory",
+    "process",
+    "ReadProcessMemory",
+    "WriteProcessMemory",
+    "typescript"
+  ],
+  "files": [
+    "index.ts",
+    "structs/*.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.1.0"
+  }
+}
