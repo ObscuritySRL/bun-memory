@@ -2,7 +2,7 @@
 // TODO: Reintroduce indexOf(…)…
 // TODO: String methods…
 
-import { FFIType, dlopen, read } from 'bun:ffi';
+import { CString, FFIType, dlopen, read } from 'bun:ffi';
 
 import type { Module, Quaternion, Region, Scratch, Vector2, Vector3 } from '../types/Memory';
 import Win32Error from './Win32Error';
@@ -261,6 +261,8 @@ class Memory {
    * @returns This Memory instance for method chaining
    * @throws {Win32Error} When the read operation fails
    *
+   * @todo Research what it will take to add CString to the Scratch type.
+   *
    * @example
    * ```typescript
    * const memory = new Memory('notepad.exe');
@@ -421,6 +423,51 @@ class Memory {
     this.Scratch1Buffer.writeUInt8(+value);
 
     this.write(address, this.Scratch1);
+
+    return this;
+  }
+
+  /**
+   * Reads a NUL-terminated C string from memory or writes a NUL-terminated C string to memory.
+   *
+   * When reading, up to `length` bytes are copied into a temporary buffer and a `CString`
+   * is constructed from that buffer. Ensure the requested `length` is large enough to
+   * include the terminator to avoid truncation. When writing, pass a `CString` that is
+   * already NUL-terminated.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValue - Number of bytes to read (when reading), or `CString` to write (when writing)
+   * @returns `CString` when reading, or this `Memory` instance when writing
+   *
+   * @todo Research and consider alternatives that do not require so many new allocations.
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read up to 64 bytes and interpret as a C string
+   * const playerName = memory.cString(0x12345678n, 64);
+   * console.log('Player name:', playerName.toString());
+   *
+   * // Write a C string (NUL-terminated)
+   * const value = new CString('PlayerOne');
+   * memory.cString(0x12345678n, value);
+   * ```
+   */
+  public cString(address: bigint, length: number): CString;
+  public cString(address: bigint, value: CString): this;
+  public cString(address: bigint, lengthOrValue: number | CString): CString | this {
+    if (typeof lengthOrValue === 'number') {
+      const scratch = Buffer.allocUnsafe(lengthOrValue);
+
+      this.read(address, scratch);
+
+      return new CString(scratch.ptr);
+    }
+
+    const scratch = Buffer.from(lengthOrValue);
+
+    this.write(address, scratch);
 
     return this;
   }
