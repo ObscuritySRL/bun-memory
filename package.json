@@ -22,7 +22,7 @@
     "url": "git://github.com/obscuritysrl/bun-memory.git"
   },
   "type": "module",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "main": "./index.ts",
   "keywords": [
     "bun",
@@ -37,6 +37,7 @@
   ],
   "files": [
     "index.ts",
+    "example/*.ts",
     "runtime/*.ts",
     "structs/*.ts",
     "types/*.ts",
