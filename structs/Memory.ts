@@ -1,25 +1,18 @@
-/**
- * Windows process memory utilities for Bun using `bun:ffi` and Win32 APIs.
- *
- * This module exposes a {@link Memory} class that can attach to a running process by name
- * and perform high-performance reads and writes directly against the target process'
- * virtual address space. It wraps selected Kernel32 functions via FFI and provides
- * strongly-typed helpers for common primitives and patterns.
- *
- * @remarks
- * - Requires Windows (uses `kernel32.dll`).
- * - Runs under Bun (uses `bun:ffi`).
- * - Use with appropriate privileges; many operations require administrator rights.
- */
+// TODO: Reintroduce findPattern(…)…
+// TODO: Reintroduce indexOf(…)…
+// TODO: String methods…
 
-import { dlopen, FFIType } from 'bun:ffi';
+import { FFIType, dlopen, read } from 'bun:ffi';
 
+import type { Module, Quaternion, Region, Scratch, Vector2, Vector3 } from '../types/Memory';
 import Win32Error from './Win32Error';
 
-/**
- * Minimal Kernel32 FFI surface used by this module.
- */
+const { f32, f64, i16, i32, i64, i8, u16, u32, u64, u8 } = read;
 
+/**
+ * Kernel32 Windows API functions imported via Foreign Function Interface (FFI).
+ * These functions provide low-level access to process and memory management operations.
+ */
 const { symbols: Kernel32 } = dlopen('kernel32.dll', {
   CloseHandle: { args: [FFIType.u64], returns: FFIType.bool },
   CreateToolhelp32Snapshot: { args: [FFIType.u32, FFIType.u32], returns: FFIType.u64 },
@@ -29,83 +22,53 @@ const { symbols: Kernel32 } = dlopen('kernel32.dll', {
   OpenProcess: { args: [FFIType.u32, FFIType.bool, FFIType.u32], returns: FFIType.u64 },
   Process32FirstW: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.bool },
   Process32NextW: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.bool },
-  ReadProcessMemory: { args: [FFIType.u64, FFIType.u64, FFIType.ptr, FFIType.u64, FFIType.ptr], returns: FFIType.bool },
+  ReadProcessMemory: { args: [FFIType.u64, FFIType.u64, FFIType.ptr, FFIType.u64_fast, FFIType.ptr], returns: FFIType.bool },
   VirtualProtectEx: { args: [FFIType.u64, FFIType.u64, FFIType.u64, FFIType.u32, FFIType.ptr], returns: FFIType.bool },
   VirtualQueryEx: { args: [FFIType.u64, FFIType.u64, FFIType.ptr, FFIType.u64], returns: FFIType.u64 },
-  WriteProcessMemory: { args: [FFIType.u64, FFIType.u64, FFIType.ptr, FFIType.u64, FFIType.ptr], returns: FFIType.bool },
+  WriteProcessMemory: { args: [FFIType.u64, FFIType.u64, FFIType.ptr, FFIType.u64_fast, FFIType.ptr], returns: FFIType.bool },
 });
 
 /**
- * Loaded module metadata captured via Toolhelp APIs.
- */
-
-type Module = {
-  modBaseAddr: bigint;
-  modBaseSize: number;
-  szModule: string;
-};
-
-/**
- * Three-dimensional vector laid out as three 32‑bit floats (x, y, z).
- */
-
-type Vector3 = {
-  x: number;
-  y: number;
-  z: number;
-};
-
-/**
- * Memory region information derived from `MEMORY_BASIC_INFORMATION`.
- */
-
-type Region = {
-  base: bigint;
-  protect: number;
-  size: bigint;
-  state: number;
-  type: number;
-};
-
-/**
- * Attaches to a Windows process and provides safe, typed memory accessors.
+ * Memory class provides cross-process memory manipulation capabilities on Windows systems.
+ * This class allows reading from and writing to memory addresses in external processes,
+ * supporting various data types including primitives, arrays, and custom structures like vectors and quaternions.
  *
  * @example
- * ```ts
- * const memory = new Memory("strounter-cike.exe");
+ * ```typescript
+ * // Connect to a process by name
+ * const memory = new Memory('notepad.exe');
  *
- * const clientDLL = memory.modules['client.dll'];
+ * // Connect to a process by ID
+ * const memory = new Memory(1234);
  *
- * if(clientDLL === undefined) {
- *  // ...
- * }
+ * // Read a 32-bit integer from memory
+ * const value = memory.i32(0x12345678n);
  *
- * // Write to your anmo...
- * const ammoOffset = 0xabcdefn;
- * memory.writeUInt32(clientDLL.modBaseAddr + ammoOffset, 9_999);
+ * // Write a float to memory
+ * memory.f32(0x12345678n, 3.14159);
  *
- * // Read your health...
- * const healthOffset = 0x123456n;
- * const health = memory.readUInt32LE(clientDLL.modBaseAddr + healthOffset);
- * console.log('You have %d health...', health);
- *
- * // Find an offset by pattern...
- * const otherOffset = memory.findPattern('aa??bbccdd??ff', clientDLL.modBaseAddr, clientDLL.modBaseSize);
- * const otherValue = memory.readBoolean(otherOffset + 0x1234n);
- *
+ * // Clean up when done
  * memory.close();
  * ```
  */
-
 class Memory {
   /**
-   * Create a new {@link Memory} instance by process image name.
+   * Creates a new Memory instance and attaches to the specified process.
    *
-   * @param name Fully-qualified process image name (e.g. `"notepad.exe"`).
-   * @throws {Win32Error} If enumerating processes or opening the process fails.
-   * @throws {Error} If the process cannot be found.
+   * @param identifier - Either a process ID (number) or process name (string)
+   * @throws {Win32Error} When process operations fail
+   * @throws {Error} When the specified process is not found
+   *
+   * @example
+   * ```typescript
+   * // Attach to process by name
+   * const memory = new Memory('calculator.exe');
+   *
+   * // Attach to process by ID
+   * const memory = new Memory(5432);
+   * ```
    */
-  constructor(name: string) {
+  constructor(identifier: number | string) {
     const dwFlags = 0x00000002; /* TH32CS_SNAPPROCESS */
     const th32ProcessID = 0;
 
@@ -128,112 +91,135 @@ class Memory {
 
     do {
       const szExeFile = lppe.toString('utf16le', 0x2c, 0x234).replace(/\0+$/, '');
+      const th32ProcessID = lppe.readUInt32LE(0x08);
 
-      if (name === szExeFile) {
-        const desiredAccess = 0x001f0fff; /* PROCESS_ALL_ACCESS */
-        const inheritHandle = false;
-        const th32ProcessID = lppe.readUInt32LE(0x08);
+      if (
+        (typeof identifier === 'number' && identifier !== th32ProcessID) || //
+        (typeof identifier === 'string' && identifier !== szExeFile)
+      ) {
+        continue;
+      }
 
-        const hProcess = Kernel32.OpenProcess(desiredAccess, inheritHandle, th32ProcessID);
+      const desiredAccess = 0x001f0fff; /* PROCESS_ALL_ACCESS */
+      const inheritHandle = false;
 
-        if (hProcess === 0n) {
-          Kernel32.CloseHandle(hSnapshot);
+      const hProcess = Kernel32.OpenProcess(desiredAccess, inheritHandle, th32ProcessID);
 
-          throw new Win32Error('OpenProcess', Kernel32.GetLastError());
-        }
-
-        this.szModule = szExeFile;
-        this.hProcess = hProcess;
-        this.th32ProcessID = th32ProcessID;
-
-        this.refresh();
-
+      if (hProcess === 0n) {
         Kernel32.CloseHandle(hSnapshot);
 
-        return;
+        throw new Win32Error('OpenProcess', Kernel32.GetLastError());
       }
+
+      this._modules = {};
+      this.hProcess = hProcess;
+      this.th32ProcessID = th32ProcessID;
+
+      this.refresh();
+
+      Kernel32.CloseHandle(hSnapshot);
+
+      return;
     } while (Kernel32.Process32NextW(hSnapshot, lppe));
 
     Kernel32.CloseHandle(hSnapshot);
 
-    throw new Error(`Process not found: ${name}…`);
+    throw new Error(`Process not found: ${identifier}…`);
   }
 
-  // Properties…
-
+  /**
+   * Memory protection constants used for determining safe memory regions.
+   * Safe regions can be read from or written to, while unsafe regions should be avoided.
+   */
   private static readonly MemoryProtections = {
     Safe: 0x10 /* PAGE_EXECUTE */ | 0x20 /* PAGE_EXECUTE_READ */ | 0x40 /* PAGE_EXECUTE_READWRITE */ | 0x80 /* PAGE_EXECUTE_WRITECOPY */ | 0x02 /* PAGE_READONLY */ | 0x04 /* PAGE_READWRITE */ | 0x08 /* PAGE_WRITECOPY */,
     Unsafe: 0x100 /* PAGE_GUARD */ | 0x01 /* PAGE_NOACCESS */,
   };
 
-  private static readonly PatternMatchAll = /([0-9A-Fa-f]{2})+/g;
-  private static readonly PatternTest = /^(?:[0-9A-Fa-f]{2}|\?{2})+$/;
+  /**
+   * Internal storage for loaded modules information.
+   */
+  private _modules: { [key: string]: Module };
 
-  private static readonly Scratch1 = Buffer.allocUnsafe(0x01);
-  private static readonly Scratch2 = Buffer.allocUnsafe(0x02);
-  private static readonly Scratch4 = Buffer.allocUnsafe(0x04);
-  private static readonly Scratch4_2 = Buffer.allocUnsafe(0x04);
-  private static readonly Scratch8 = Buffer.allocUnsafe(0x08);
-  private static readonly Scratch12 = Buffer.allocUnsafe(0x0c);
+  /**
+   * Pre-allocated scratch buffers for memory operations to avoid repeated allocations.
+   * These buffers are reused across multiple read/write operations for performance.
+   */
+  private readonly Scratch1 = new Uint8Array(0x01);
+  private readonly Scratch2 = new Uint8Array(0x02);
+  private readonly Scratch4 = new Uint8Array(0x04);
+  private readonly Scratch8 = new Uint8Array(0x08);
+  private readonly Scratch12 = new Uint8Array(0x0c);
+  private readonly Scratch16 = new Uint8Array(0x10);
 
+  /**
+   * Buffer views of the scratch arrays for easier data manipulation.
+   */
+  private readonly Scratch1Buffer = Buffer.from(this.Scratch1.buffer, this.Scratch1.byteOffset, this.Scratch1.byteLength);
+  private readonly Scratch2Buffer = Buffer.from(this.Scratch2.buffer, this.Scratch2.byteOffset, this.Scratch2.byteLength);
+  private readonly Scratch4Buffer = Buffer.from(this.Scratch4.buffer, this.Scratch4.byteOffset, this.Scratch4.byteLength);
+  private readonly Scratch8Buffer = Buffer.from(this.Scratch8.buffer, this.Scratch8.byteOffset, this.Scratch8.byteLength);
+  private readonly Scratch12Buffer = Buffer.from(this.Scratch12.buffer, this.Scratch12.byteOffset, this.Scratch12.byteLength);
+  private readonly Scratch16Buffer = Buffer.from(this.Scratch16.buffer, this.Scratch16.byteOffset, this.Scratch16.byteLength);
+
+  /**
+   * Scratch buffers for Windows API structures.
+   */
   private readonly ScratchMemoryBasicInformation = Buffer.allocUnsafe(0x30 /* sizeof(MEMORY_BASIC_INFORMATION) */);
   private readonly ScratchModuleEntry32W = Buffer.allocUnsafe(0x438 /* sizeof(MODULEENTRY32W) */);
 
-  private _modules!: { [key: string]: Module };
-
   /**
-   * Native process handle returned by `OpenProcess`.
+   * Handle to the target process.
    */
-
-  public readonly hProcess: bigint;
-  public readonly szModule: string;
+  private readonly hProcess: bigint;
 
   /**
-   * Target process identifier (PID).
+   * Process ID of the target process.
    */
-
-  public readonly th32ProcessID: number;
-
-  public get modBaseAddr(): Memory['_modules'][string]['modBaseAddr'] {
-    return this.modules[this.szModule].modBaseAddr;
-  }
-
-  public get modBaseSize(): Memory['_modules'][string]['modBaseSize'] {
-    return this.modules[this.szModule].modBaseSize;
-  }
+  private readonly th32ProcessID: number;
 
   /**
-   * Snapshot of modules loaded in the target process.
+   * Gets the loaded modules for the target process.
    *
-   * @remarks Call {@link refresh} to update this list.
+   * @returns A frozen object containing module information indexed by module name
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('notepad.exe');
+   * const modules = memory.modules;
+   *
+   * // Access a specific module
+   * const mainModule = modules['notepad.exe'];
+   * console.log(`Base address: 0x${mainModule.base.toString(16)}`);
+   * console.log(`Size: ${mainModule.size} bytes`);
+   * ```
    */
-
   public get modules(): Memory['_modules'] {
     return this._modules;
   }
 
-  // Methods…
+  // Internal methods
 
   /**
-   * Close the underlying process handle.
-   */
-
-  public close(): void {
-    Kernel32.CloseHandle(this.hProcess);
-
-    return;
-  }
-
-  /**
-   * Enumerate committed, readable/executable memory regions within the given range.
+   * Retrieves memory region information for a specified address range.
+   * This method queries the virtual memory layout to identify safe regions for memory operations.
    *
-   * @param address Start address for the query.
-   * @param length Number of bytes to cover from `address`.
-   * @returns Array of safe regions intersecting the requested range.
-   * @private
+   * @param address - Starting memory address
+   * @param length - Length of the memory range to query
+   * @returns Array of Region objects describing the memory layout
+   * @throws {Win32Error} When memory query operations fail
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('notepad.exe');
+   * const regions = memory.regions(0x10000000n, 0x1000n);
+   *
+   * regions.forEach(region => {
+   *   console.log(`Region: 0x${region.base.toString(16)} - Size: ${region.size}`);
+   * });
+   * ```
    */
-
-  private regions(address: bigint | number, length: bigint | number): Region[] {
+  private regions(address: bigint, length: bigint | number): Region[] {
     const dwLength = 0x30; /* sizeof(MEMORY_BASIC_INFORMATION) */
     let   lpAddress = BigInt(address); // prettier-ignore
     const lpBuffer = this.ScratchMemoryBasicInformation;
@@ -264,12 +250,106 @@ class Memory {
     return result;
   }
 
-  /**
-   * Refresh the list of loaded modules for the target process.
-   *
-   * @throws {Win32Error} If Toolhelp snapshots cannot be created or iterated.
-   */
+  // Core memory operations
 
+  /**
+   * Reads data from the target process memory into a scratch buffer.
+   * This is a low-level method used internally by the typed read methods.
+   *
+   * @param address - Memory address to read from
+   * @param scratch - Buffer to store the read data
+   * @returns This Memory instance for method chaining
+   * @throws {Win32Error} When the read operation fails
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('notepad.exe');
+   * const buffer = new Uint8Array(4);
+   * memory.read(0x12345678n, buffer);
+   * ```
+   */
+  public read(address: bigint, scratch: Scratch): this {
+    const lpBaseAddress = address;
+    const lpBuffer = scratch.ptr;
+    const nSize = scratch.byteLength;
+    const numberOfBytesRead = 0x00n;
+
+    const bReadProcessMemory = Kernel32.ReadProcessMemory(this.hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesRead);
+
+    if (!bReadProcessMemory) {
+      throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+    }
+
+    return this;
+  }
+
+  /**
+   * Writes data from a scratch buffer to the target process memory.
+   * This is a low-level method used internally by the typed write methods.
+   *
+   * @param address - Memory address to write to
+   * @param scratch - Buffer containing the data to write
+   * @throws {Win32Error} When the write operation fails
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('notepad.exe');
+   * const buffer = new Uint8Array([0x41, 0x42, 0x43, 0x44]);
+   * memory.write(0x12345678n, buffer);
+   * ```
+   */
+  private write(address: bigint, scratch: Scratch): void {
+    const lpBaseAddress = address;
+    const lpBuffer = scratch.ptr;
+    const nSize = scratch.byteLength;
+    const numberOfBytesWritten = 0x00n;
+
+    const WriteProcessMemory = Kernel32.WriteProcessMemory(this.hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesWritten);
+
+    if (!WriteProcessMemory) {
+      throw new Win32Error('WriteProcessMemory', Kernel32.GetLastError());
+    }
+
+    return;
+  }
+
+  // Public utility methods
+
+  /**
+   * Closes the handle to the target process and releases resources.
+   * This method should be called when the Memory instance is no longer needed.
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('notepad.exe');
+   * // ... perform memory operations
+   * memory.close(); // Clean up resources
+   * ```
+   */
+  public close(): void {
+    Kernel32.CloseHandle(this.hProcess);
+
+    return;
+  }
+
+  /**
+   * Refreshes the list of modules loaded in the target process.
+   * This method should be called if modules are loaded or unloaded during runtime.
+   *
+   * @throws {Win32Error} When module enumeration fails
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('notepad.exe');
+   *
+   * // Initial modules
+   * console.log('Initial modules:', Object.keys(memory.modules));
+   *
+   * // After some time, refresh to get updated module list
+   * memory.refresh();
+   * console.log('Updated modules:', Object.keys(memory.modules));
+   * ```
+   */
   public refresh(): void {
     const dwFlags = 0x00000008 /* TH32CS_SNAPMODULE */ | 0x00000010; /* TH32CS_SNAPMODULE32 */
 
@@ -279,8 +359,9 @@ class Memory {
       throw new Win32Error('CreateToolhelp32Snapshot', Kernel32.GetLastError());
     }
 
-    const lpme = this.ScratchModuleEntry32W;
-    /* */ lpme.writeUInt32LE(0x438 /* sizeof(MODULEENTRY32W) */);
+    this.ScratchModuleEntry32W.writeUInt32LE(0x438 /* sizeof(MODULEENTRY32W) */);
+
+    const lpme = this.ScratchModuleEntry32W.ptr;
 
     const bModule32FirstW = Kernel32.Module32FirstW(hSnapshot, lpme);
 
@@ -293,11 +374,11 @@ class Memory {
     const modules: Memory['_modules'] = {};
 
     do {
-      const modBaseAddr = lpme.readBigUInt64LE(0x18);
-      const modBaseSize = lpme.readUInt32LE(0x20);
-      const szModule = lpme.toString('utf16le', 0x30, 0x230).replace(/\0+$/, '');
+      const modBaseAddr = this.ScratchModuleEntry32W.readBigUInt64LE(0x18);
+      const modBaseSize = this.ScratchModuleEntry32W.readUInt32LE(0x20);
+      const szModule = this.ScratchModuleEntry32W.toString('utf16le', 0x30, 0x230).replace(/\0+$/, '');
 
-      modules[szModule] = { modBaseAddr, modBaseSize, szModule };
+      modules[szModule] = Object.freeze({ base: modBaseAddr, name: szModule, size: modBaseSize });
     } while (Kernel32.Module32NextW(hSnapshot, lpme));
 
     Kernel32.CloseHandle(hSnapshot);
@@ -307,1019 +388,1087 @@ class Memory {
     return;
   }
 
-  // Private Methods…
-
-  // QoL methods…
+  // Typed read/write methods
 
   /**
-   * Scan memory for a hex signature with wildcard support.
+   * Reads a boolean value from memory or writes a boolean value to memory.
    *
-   * @param needle Hex pattern using pairs of hex digits; use `??` as a byte wildcard.
-   *               Whitespace is not permitted (e.g. `"48895C24??48896C24??"`).
-   * @param address Start address to begin scanning.
-   * @param length Number of bytes to scan from `address`.
-   * @returns Address of the first match, or `-1n` if not found.
+   * @param address - Memory address to read from or write to
+   * @param value - Optional value to write. If omitted, performs a read operation
+   * @returns The boolean value when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read a boolean value
+   * const isAlive = memory.bool(0x12345678n);
+   * console.log('Player is alive:', isAlive);
+   *
+   * // Write a boolean value
+   * memory.bool(0x12345678n, true);
+   * ```
    */
+  public bool(address: bigint): boolean;
+  public bool(address: bigint, value: boolean): this;
+  public bool(address: bigint, value?: boolean): boolean | this {
+    if (value === undefined) {
+      this.read(address, this.Scratch1);
 
-  public findPattern(needle: string, address: bigint | number, length: bigint | number): bigint {
-    const { PatternMatchAll, PatternTest } = Memory;
-
-    address = BigInt(address);
-    length = BigInt(length);
-
-    const test = PatternTest.test(needle);
-
-    if (!test) {
-      return -1n;
+      return u8(this.Scratch1.ptr) !== 0;
     }
 
-    const actualEnd = address + length;
-    const actualStart = address;
+    this.Scratch1Buffer.writeUInt8(+value);
 
-    const needleLength = needle.length >>> 1;
+    this.write(address, this.Scratch1);
 
-    const [anchor, ...tokens] = [...needle.matchAll(PatternMatchAll)] //
-      .map((match) => ({ buffer: Buffer.from(match[0], 'hex'), index: match.index >>> 1, length: match[0].length >>> 1 }))
-      .sort(({ buffer: { length: a } }, { buffer: { length: b } }) => b - a);
+    return this;
+  }
 
-    const regions = this.regions(address, length);
+  /**
+   * Reads a 32-bit floating-point value from memory or writes a 32-bit floating-point value to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param value - Optional value to write. If omitted, performs a read operation
+   * @returns The float value when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read a float value
+   * const playerHealth = memory.f32(0x12345678n);
+   * console.log('Player health:', playerHealth);
+   *
+   * // Write a float value
+   * memory.f32(0x12345678n, 100.0);
+   * ```
+   */
+  public f32(address: bigint): number;
+  public f32(address: bigint, value: number): this;
+  public f32(address: bigint, value?: number): number | this {
+    if (value === undefined) {
+      this.read(address, this.Scratch4);
 
-    for (const region of regions) {
-      const regionEnd = region.base + region.size;
-      const regionStart = region.base;
+      return f32(this.Scratch4.ptr);
+    }
 
-      const scanEnd = regionEnd < actualEnd ? regionEnd : actualEnd;
-      const scanStart = regionStart > actualStart ? regionStart : actualStart;
+    this.Scratch4Buffer.writeFloatLE(value);
 
-      const scanLength = scanEnd - scanStart;
+    this.write(address, this.Scratch4);
 
-      if (needleLength > scanLength) {
-        continue;
+    return this;
+  }
+
+  /**
+   * Reads an array of 32-bit floating-point values from memory or writes an array of 32-bit floating-point values to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValues - Length of array to read, or array of values to write
+   * @returns Float32Array when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read an array of 10 float values
+   * const coordinates = memory.f32Array(0x12345678n, 10);
+   * console.log('Coordinates:', coordinates);
+   *
+   * // Write an array of float values
+   * const newCoordinates = new Float32Array([1.0, 2.5, 3.14, 4.2]);
+   * memory.f32Array(0x12345678n, newCoordinates);
+   * ```
+   */
+  public f32Array(address: bigint, length: number): Float32Array;
+  public f32Array(address: bigint, values: Float32Array): this;
+  public f32Array(address: bigint, lengthOrValues: Float32Array | number): Float32Array | this {
+    if (typeof lengthOrValues === 'number') {
+      const length = lengthOrValues;
+      const scratch = new Float32Array(length);
+
+      this.read(address, scratch);
+
+      return scratch;
+    }
+
+    const values = lengthOrValues;
+
+    this.write(address, values);
+
+    return this;
+  }
+
+  /**
+   * Reads a 64-bit floating-point value from memory or writes a 64-bit floating-point value to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param value - Optional value to write. If omitted, performs a read operation
+   * @returns The double value when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('scientific_app.exe');
+   *
+   * // Read a double precision value
+   * const preciseValue = memory.f64(0x12345678n);
+   * console.log('Precise value:', preciseValue);
+   *
+   * // Write a double precision value
+   * memory.f64(0x12345678n, 3.141592653589793);
+   * ```
+   */
+  public f64(address: bigint): number;
+  public f64(address: bigint, value: number): this;
+  public f64(address: bigint, value?: number): number | this {
+    if (value === undefined) {
+      this.read(address, this.Scratch8);
+
+      return f64(this.Scratch8.ptr);
+    }
+
+    this.Scratch8Buffer.writeDoubleLE(value);
+
+    this.write(address, this.Scratch8);
+
+    return this;
+  }
+
+  /**
+   * Reads an array of 64-bit floating-point values from memory or writes an array of 64-bit floating-point values to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValues - Length of array to read, or array of values to write
+   * @returns Float64Array when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('scientific_app.exe');
+   *
+   * // Read an array of 5 double precision values
+   * const preciseData = memory.f64Array(0x12345678n, 5);
+   * console.log('Precise data:', preciseData);
+   *
+   * // Write an array of double precision values
+   * const newData = new Float64Array([1.1, 2.2, 3.3, 4.4, 5.5]);
+   * memory.f64Array(0x12345678n, newData);
+   * ```
+   */
+  public f64Array(address: bigint, length: number): Float64Array;
+  public f64Array(address: bigint, values: Float64Array): this;
+  public f64Array(address: bigint, lengthOrValues: Float64Array | number): Float64Array | this {
+    if (typeof lengthOrValues === 'number') {
+      const length = lengthOrValues;
+      const scratch = new Float64Array(length);
+
+      this.read(address, scratch);
+
+      return scratch;
+    }
+
+    const values = lengthOrValues;
+
+    this.write(address, values);
+
+    return this;
+  }
+
+  /**
+   * Reads a signed 16-bit integer value from memory or writes a signed 16-bit integer value to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param value - Optional value to write. If omitted, performs a read operation
+   * @returns The int16 value when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read a signed 16-bit integer
+   * const temperature = memory.i16(0x12345678n);
+   * console.log('Temperature:', temperature);
+   *
+   * // Write a signed 16-bit integer
+   * memory.i16(0x12345678n, -273);
+   * ```
+   */
+  public i16(address: bigint): number;
+  public i16(address: bigint, value: number): this;
+  public i16(address: bigint, value?: number): number | this {
+    if (value === undefined) {
+      this.read(address, this.Scratch2);
+
+      return i16(this.Scratch2.ptr);
+    }
+
+    this.Scratch2Buffer.writeInt16LE(value);
+
+    this.write(address, this.Scratch2);
+
+    return this;
+  }
+
+  /**
+   * Reads an array of signed 16-bit integer values from memory or writes an array of signed 16-bit integer values to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValues - Length of array to read, or array of values to write
+   * @returns Int16Array when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('audio_app.exe');
+   *
+   * // Read an array of audio samples
+   * const samples = memory.i16Array(0x12345678n, 1024);
+   * console.log('Audio samples:', samples);
+   *
+   * // Write audio samples
+   * const newSamples = new Int16Array([-100, 200, -300, 400]);
+   * memory.i16Array(0x12345678n, newSamples);
+   * ```
+   */
+  public i16Array(address: bigint, length: number): Int16Array;
+  public i16Array(address: bigint, values: Int16Array): this;
+  public i16Array(address: bigint, lengthOrValues: Int16Array | number): Int16Array | this {
+    if (typeof lengthOrValues === 'number') {
+      const length = lengthOrValues;
+      const scratch = new Int16Array(length);
+
+      this.read(address, scratch);
+
+      return scratch;
+    }
+
+    const values = lengthOrValues;
+
+    this.write(address, values);
+
+    return this;
+  }
+
+  /**
+   * Reads a signed 32-bit integer value from memory or writes a signed 32-bit integer value to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param value - Optional value to write. If omitted, performs a read operation
+   * @returns The int32 value when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read a player's score
+   * const score = memory.i32(0x12345678n);
+   * console.log('Player score:', score);
+   *
+   * // Set a new score
+   * memory.i32(0x12345678n, 999999);
+   * ```
+   */
+  public i32(address: bigint): number;
+  public i32(address: bigint, value: number): this;
+  public i32(address: bigint, value?: number): number | this {
+    if (value === undefined) {
+      this.read(address, this.Scratch4);
+
+      return i32(this.Scratch4.ptr);
+    }
+
+    this.Scratch4Buffer.writeInt32LE(value);
+
+    this.write(address, this.Scratch4);
+
+    return this;
+  }
+
+  /**
+   * Reads an array of signed 32-bit integer values from memory or writes an array of signed 32-bit integer values to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValues - Length of array to read, or array of values to write
+   * @returns Int32Array when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read inventory item counts
+   * const inventory = memory.i32Array(0x12345678n, 20);
+   * console.log('Inventory:', inventory);
+   *
+   * // Set inventory values
+   * const newInventory = new Int32Array([99, 50, 25, 10, 5]);
+   * memory.i32Array(0x12345678n, newInventory);
+   * ```
+   */
+  public i32Array(address: bigint, length: number): Int32Array;
+  public i32Array(address: bigint, values: Int32Array): this;
+  public i32Array(address: bigint, lengthOrValues: Int32Array | number): Int32Array | this {
+    if (typeof lengthOrValues === 'number') {
+      const length = lengthOrValues;
+      const scratch = new Int32Array(length);
+
+      this.read(address, scratch);
+
+      return scratch;
+    }
+
+    const values = lengthOrValues;
+
+    this.write(address, values);
+
+    return this;
+  }
+
+  /**
+   * Reads a signed 64-bit integer value from memory or writes a signed 64-bit integer value to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param value - Optional value to write. If omitted, performs a read operation
+   * @returns The int64 value when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('database.exe');
+   *
+   * // Read a large number (timestamp, file size, etc.)
+   * const timestamp = memory.i64(0x12345678n);
+   * console.log('Timestamp:', timestamp);
+   *
+   * // Write a large number
+   * memory.i64(0x12345678n, 9223372036854775807n);
+   * ```
+   */
+  public i64(address: bigint): bigint;
+  public i64(address: bigint, value: bigint): this;
+  public i64(address: bigint, value?: bigint): bigint | this {
+    if (value === undefined) {
+      this.read(address, this.Scratch8);
+
+      return i64(this.Scratch8.ptr);
+    }
+
+    this.Scratch8Buffer.writeBigInt64LE(value);
+
+    this.write(address, this.Scratch8);
+
+    return this;
+  }
+
+  /**
+   * Reads an array of signed 64-bit integer values from memory or writes an array of signed 64-bit integer values to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValues - Length of array to read, or array of values to write
+   * @returns BigInt64Array when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('database.exe');
+   *
+   * // Read an array of large numbers
+   * const largeNumbers = memory.i64Array(0x12345678n, 10);
+   * console.log('Large numbers:', largeNumbers);
+   *
+   * // Write an array of large numbers
+   * const newNumbers = new BigInt64Array([1n, 2n, 3n, 4n, 5n]);
+   * memory.i64Array(0x12345678n, newNumbers);
+   * ```
+   */
+  public i64Array(address: bigint, length: number): BigInt64Array;
+  public i64Array(address: bigint, values: BigInt64Array): this;
+  public i64Array(address: bigint, lengthOrValues: BigInt64Array | number): BigInt64Array | this {
+    if (typeof lengthOrValues === 'number') {
+      const length = lengthOrValues;
+      const scratch = new BigInt64Array(length);
+
+      this.read(address, scratch);
+
+      return scratch;
+    }
+
+    const values = lengthOrValues;
+
+    this.write(address, values);
+
+    return this;
+  }
+
+  /**
+   * Reads a signed 8-bit integer value from memory or writes a signed 8-bit integer value to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param value - Optional value to write. If omitted, performs a read operation
+   * @returns The int8 value when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read a small signed value (e.g., direction, state)
+   * const direction = memory.i8(0x12345678n);
+   * console.log('Direction:', direction);
+   *
+   * // Write a small signed value
+   * memory.i8(0x12345678n, -127);
+   * ```
+   */
+  public i8(address: bigint): number;
+  public i8(address: bigint, value: number): this;
+  public i8(address: bigint, value?: number): number | this {
+    if (value === undefined) {
+      this.read(address, this.Scratch1);
+
+      return i8(this.Scratch1.ptr);
+    }
+
+    this.Scratch1Buffer.writeInt8(value);
+
+    this.write(address, this.Scratch1);
+
+    return this;
+  }
+
+  /**
+   * Reads an array of signed 8-bit integer values from memory or writes an array of signed 8-bit integer values to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValues - Length of array to read, or array of values to write
+   * @returns Int8Array when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read an array of small signed values
+   * const directions = memory.i8Array(0x12345678n, 8);
+   * console.log('Movement directions:', directions);
+   *
+   * // Write movement directions
+   * const newDirections = new Int8Array([-1, 0, 1, -1, 0, 1, -1, 0]);
+   * memory.i8Array(0x12345678n, newDirections);
+   * ```
+   */
+  public i8Array(address: bigint, length: number): Int8Array;
+  public i8Array(address: bigint, values: Int8Array): this;
+  public i8Array(address: bigint, lengthOrValues: Int8Array | number): Int8Array | this {
+    if (typeof lengthOrValues === 'number') {
+      const length = lengthOrValues;
+      const scratch = new Int8Array(length);
+
+      this.read(address, scratch);
+
+      return scratch;
+    }
+
+    const values = lengthOrValues;
+
+    this.write(address, values);
+
+    return this;
+  }
+
+  /**
+   * Reads a quaternion (4D rotation) from memory or writes a quaternion to memory.
+   * Quaternions are stored as four 32-bit floats: x, y, z, w.
+   *
+   * @param address - Memory address to read from or write to
+   * @param value - Optional quaternion to write. If omitted, performs a read operation
+   * @returns The Quaternion object when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read player rotation
+   * const rotation = memory.quaternion(0x12345678n);
+   * console.log('Player rotation:', rotation);
+   *
+   * // Set player rotation to identity
+   * memory.quaternion(0x12345678n, { x: 0, y: 0, z: 0, w: 1 });
+   * ```
+   */
+  public quaternion(address: bigint): Quaternion;
+  public quaternion(address: bigint, value: Quaternion): this;
+  public quaternion(address: bigint, value?: Quaternion): Quaternion | this {
+    if (value === undefined) {
+      this.read(address, this.Scratch16);
+
+      const w = f32(this.Scratch16.ptr, 0x0c);
+      const x = f32(this.Scratch16.ptr);
+      const y = f32(this.Scratch16.ptr, 0x04);
+      const z = f32(this.Scratch16.ptr, 0x08);
+
+      return { w, x, y, z };
+    }
+
+    this.Scratch16Buffer.writeFloatLE(value.w, 0x0c);
+    this.Scratch16Buffer.writeFloatLE(value.x);
+    this.Scratch16Buffer.writeFloatLE(value.y, 0x04);
+    this.Scratch16Buffer.writeFloatLE(value.z, 0x08);
+
+    this.write(address, this.Scratch16);
+
+    return this;
+  }
+
+  /**
+   * Reads an array of quaternions from memory or writes an array of quaternions to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValues - Length of array to read, or array of quaternions to write
+   * @returns Array of Quaternion objects when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read bone rotations for skeletal animation
+   * const boneRotations = memory.quaternionArray(0x12345678n, 50);
+   * console.log('Bone rotations:', boneRotations);
+   *
+   * // Set all bones to identity rotation
+   * const identityRotations = Array(50).fill({ x: 0, y: 0, z: 0, w: 1 });
+   * memory.quaternionArray(0x12345678n, identityRotations);
+   * ```
+   */
+  public quaternionArray(address: bigint, length: number): Quaternion[];
+  public quaternionArray(address: bigint, values: Quaternion[]): this;
+  public quaternionArray(address: bigint, lengthOrValues: Quaternion[] | number): Quaternion[] | this {
+    if (typeof lengthOrValues === 'number') {
+      const length = lengthOrValues;
+      const scratch = new Float32Array(length * 0x04); // 4 * f32 per Quaternion
+
+      this.read(address, scratch);
+
+      const result = new Array<Quaternion>(length);
+
+      for (let i = 0, j = 0; i < length; i++, j += 0x04) {
+        const w = scratch[j + 0x03];
+        const x = scratch[j];
+        const y = scratch[j + 0x01];
+        const z = scratch[j + 0x02];
+
+        result[i] = { w, x, y, z };
       }
 
-      const haystack = this.readBuffer(scanStart, scanLength);
+      return result;
+    }
 
-      let indexOf = haystack.indexOf(anchor.buffer, anchor.index);
+    const values = lengthOrValues;
+    const scratch = new Float32Array(values.length * 0x04);
 
-      if (indexOf === -1) {
-        continue;
+    for (let i = 0, j = 0; i < values.length; i++, j += 0x04) {
+      const quaternion = values[i];
+
+      scratch[j + 0x03] = quaternion.w;
+      scratch[j] = quaternion.x;
+      scratch[j + 0x01] = quaternion.y;
+      scratch[j + 0x02] = quaternion.z;
+    }
+
+    this.write(address, scratch);
+
+    return this;
+  }
+
+  /**
+   * Reads an unsigned 16-bit integer value from memory or writes an unsigned 16-bit integer value to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param value - Optional value to write. If omitted, performs a read operation
+   * @returns The uint16 value when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read a port number or small positive value
+   * const port = memory.u16(0x12345678n);
+   * console.log('Network port:', port);
+   *
+   * // Write a port number
+   * memory.u16(0x12345678n, 8080);
+   * ```
+   */
+  public u16(address: bigint): number;
+  public u16(address: bigint, value: number): this;
+  public u16(address: bigint, value?: number): number | this {
+    if (value === undefined) {
+      this.read(address, this.Scratch2);
+
+      return u16(this.Scratch2.ptr);
+    }
+
+    this.Scratch2Buffer.writeUInt16LE(value);
+
+    this.write(address, this.Scratch2);
+
+    return this;
+  }
+
+  /**
+   * Reads an array of unsigned 16-bit integer values from memory or writes an array of unsigned 16-bit integer values to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValues - Length of array to read, or array of values to write
+   * @returns Uint16Array when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('network_app.exe');
+   *
+   * // Read an array of port numbers
+   * const ports = memory.u16Array(0x12345678n, 10);
+   * console.log('Active ports:', ports);
+   *
+   * // Write port configuration
+   * const newPorts = new Uint16Array([80, 443, 8080, 3000, 5432]);
+   * memory.u16Array(0x12345678n, newPorts);
+   * ```
+   */
+  public u16Array(address: bigint, length: number): Uint16Array;
+  public u16Array(address: bigint, values: Uint16Array): this;
+  public u16Array(address: bigint, lengthOrValues: Uint16Array | number): Uint16Array | this {
+    if (typeof lengthOrValues === 'number') {
+      const length = lengthOrValues;
+      const scratch = new Uint16Array(length);
+
+      this.read(address, scratch);
+
+      return scratch;
+    }
+
+    const values = lengthOrValues;
+
+    this.write(address, values);
+
+    return this;
+  }
+
+  /**
+   * Reads an unsigned 32-bit integer value from memory or writes an unsigned 32-bit integer value to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param value - Optional value to write. If omitted, performs a read operation
+   * @returns The uint32 value when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read player's money (always positive)
+   * const money = memory.u32(0x12345678n);
+   * console.log('Player money:', money);
+   *
+   * // Give player maximum money
+   * memory.u32(0x12345678n, 4294967295);
+   * ```
+   */
+  public u32(address: bigint): number;
+  public u32(address: bigint, value: number): this;
+  public u32(address: bigint, value?: number): number | this {
+    if (value === undefined) {
+      this.read(address, this.Scratch4);
+
+      return u32(this.Scratch4.ptr);
+    }
+
+    this.Scratch4Buffer.writeUInt32LE(value);
+
+    this.write(address, this.Scratch4);
+
+    return this;
+  }
+
+  /**
+   * Reads an array of unsigned 32-bit integer values from memory or writes an array of unsigned 32-bit integer values to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValues - Length of array to read, or array of values to write
+   * @returns Uint32Array when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read resource amounts
+   * const resources = memory.u32Array(0x12345678n, 6);
+   * console.log('Resources:', resources);
+   *
+   * // Set resource amounts
+   * const newResources = new Uint32Array([1000, 2000, 3000, 4000, 5000, 6000]);
+   * memory.u32Array(0x12345678n, newResources);
+   * ```
+   */
+  public u32Array(address: bigint, length: number): Uint32Array;
+  public u32Array(address: bigint, values: Uint32Array): this;
+  public u32Array(address: bigint, lengthOrValues: Uint32Array | number): Uint32Array | this {
+    if (typeof lengthOrValues === 'number') {
+      const length = lengthOrValues;
+      const scratch = new Uint32Array(length);
+
+      this.read(address, scratch);
+
+      return scratch;
+    }
+
+    const values = lengthOrValues;
+
+    this.write(address, values);
+
+    return this;
+  }
+
+  /**
+   * Reads an unsigned 64-bit integer value from memory or writes an unsigned 64-bit integer value to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param value - Optional value to write. If omitted, performs a read operation
+   * @returns The uint64 value when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('database.exe');
+   *
+   * // Read a very large positive number
+   * const recordId = memory.u64(0x12345678n);
+   * console.log('Record ID:', recordId);
+   *
+   * // Write a very large positive number
+   * memory.u64(0x12345678n, 18446744073709551615n);
+   * ```
+   */
+  public u64(address: bigint): bigint;
+  public u64(address: bigint, value: bigint): this;
+  public u64(address: bigint, value?: bigint): bigint | this {
+    if (value === undefined) {
+      this.read(address, this.Scratch8);
+
+      return u64(this.Scratch8.ptr);
+    }
+
+    this.Scratch8Buffer.writeBigUInt64LE(value);
+
+    this.write(address, this.Scratch8);
+
+    return this;
+  }
+
+  /**
+   * Reads an array of unsigned 64-bit integer values from memory or writes an array of unsigned 64-bit integer values to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValues - Length of array to read, or array of values to write
+   * @returns BigUint64Array when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('database.exe');
+   *
+   * // Read an array of record IDs
+   * const recordIds = memory.u64Array(0x12345678n, 100);
+   * console.log('Record IDs:', recordIds);
+   *
+   * // Write record IDs
+   * const newIds = new BigUint64Array([1000n, 2000n, 3000n, 4000n]);
+   * memory.u64Array(0x12345678n, newIds);
+   * ```
+   */
+  public u64Array(address: bigint, length: number): BigUint64Array;
+  public u64Array(address: bigint, values: BigUint64Array): this;
+  public u64Array(address: bigint, lengthOrValues: BigUint64Array | number): BigUint64Array | this {
+    if (typeof lengthOrValues === 'number') {
+      const length = lengthOrValues;
+      const scratch = new BigUint64Array(length);
+
+      this.read(address, scratch);
+
+      return scratch;
+    }
+
+    const values = lengthOrValues;
+
+    this.write(address, values);
+
+    return this;
+  }
+
+  /**
+   * Reads an unsigned 8-bit integer value from memory or writes an unsigned 8-bit integer value to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param value - Optional value to write. If omitted, performs a read operation
+   * @returns The uint8 value when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read a byte value (0-255)
+   * const opacity = memory.u8(0x12345678n);
+   * console.log('UI opacity:', opacity);
+   *
+   * // Set opacity to maximum
+   * memory.u8(0x12345678n, 255);
+   * ```
+   */
+  public u8(address: bigint): number;
+  public u8(address: bigint, value: number): this;
+  public u8(address: bigint, value?: number): number | this {
+    if (value === undefined) {
+      this.read(address, this.Scratch1);
+
+      return u8(this.Scratch1.ptr);
+    }
+
+    this.Scratch1Buffer.writeUInt8(value);
+
+    this.write(address, this.Scratch1);
+
+    return this;
+  }
+
+  /**
+   * Reads an array of unsigned 8-bit integer values from memory or writes an array of unsigned 8-bit integer values to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValues - Length of array to read, or array of values to write
+   * @returns Uint8Array when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('image_editor.exe');
+   *
+   * // Read pixel data
+   * const pixels = memory.u8Array(0x12345678n, 1024);
+   * console.log('Pixel data:', pixels);
+   *
+   * // Write pixel data
+   * const newPixels = new Uint8Array([255, 128, 64, 32, 16, 8, 4, 2]);
+   * memory.u8Array(0x12345678n, newPixels);
+   * ```
+   */
+  public u8Array(address: bigint, length: number): Uint8Array;
+  public u8Array(address: bigint, values: Uint8Array): this;
+  public u8Array(address: bigint, lengthOrValues: Uint8Array | number): Uint8Array | this {
+    if (typeof lengthOrValues === 'number') {
+      const length = lengthOrValues;
+      const scratch = new Uint8Array(length);
+
+      this.read(address, scratch);
+
+      return scratch;
+    }
+
+    const values = lengthOrValues;
+
+    this.write(address, values);
+
+    return this;
+  }
+
+  /**
+   * Reads a 2D vector from memory or writes a 2D vector to memory.
+   * Vectors are stored as two 32-bit floats: x, y.
+   *
+   * @param address - Memory address to read from or write to
+   * @param value - Optional vector to write. If omitted, performs a read operation
+   * @returns The Vector2 object when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read player position
+   * const position = memory.vector2(0x12345678n);
+   * console.log('Player position:', position);
+   *
+   * // Teleport player to origin
+   * memory.vector2(0x12345678n, { x: 0, y: 0 });
+   * ```
+   */
+  public vector2(address: bigint): Vector2;
+  public vector2(address: bigint, value: Vector2): this;
+  public vector2(address: bigint, value?: Vector2): Vector2 | this {
+    if (value === undefined) {
+      this.read(address, this.Scratch8);
+
+      const x = f32(this.Scratch8.ptr);
+      const y = f32(this.Scratch8.ptr, 0x04);
+
+      return { x, y };
+    }
+
+    this.Scratch8Buffer.writeFloatLE(value.x);
+    this.Scratch8Buffer.writeFloatLE(value.y, 0x04);
+
+    this.write(address, this.Scratch8);
+
+    return this;
+  }
+
+  /**
+   * Reads an array of 2D vectors from memory or writes an array of 2D vectors to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValues - Length of array to read, or array of vectors to write
+   * @returns Array of Vector2 objects when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read waypoints for AI pathfinding
+   * const waypoints = memory.vector2Array(0x12345678n, 20);
+   * console.log('AI waypoints:', waypoints);
+   *
+   * // Set new waypoints
+   * const newWaypoints = [
+   *   { x: 10, y: 20 },
+   *   { x: 30, y: 40 },
+   *   { x: 50, y: 60 }
+   * ];
+   * memory.vector2Array(0x12345678n, newWaypoints);
+   * ```
+   */
+  public vector2Array(address: bigint, length: number): Vector2[];
+  public vector2Array(address: bigint, values: Vector2[]): this;
+  public vector2Array(address: bigint, lengthOrValues: Vector2[] | number): Vector2[] | this {
+    if (typeof lengthOrValues === 'number') {
+      const length = lengthOrValues;
+      const scratch = new Float32Array(length * 2);
+
+      this.read(address, scratch);
+
+      const result = new Array<Vector2>(length);
+
+      for (let i = 0, j = 0; i < length; i++, j += 0x02) {
+        const x = scratch[j];
+        const y = scratch[j + 0x01];
+
+        result[i] = { x, y };
       }
 
-      const lastStart = scanLength - BigInt(needleLength);
-
-      outer: do {
-        const matchStart = indexOf - anchor.index;
-
-        if (lastStart < matchStart) {
-          break;
-        }
-
-        for (const token of tokens) {
-          const sourceEnd = matchStart + token.index + token.length;
-          const sourceStart = matchStart + token.index;
-
-          const targetEnd = token.length;
-          const targetStart = 0;
-
-          const compare = haystack.compare(token.buffer, targetStart, targetEnd, sourceStart, sourceEnd);
-
-          if (compare !== 0) {
-            indexOf = haystack.indexOf(anchor.buffer, indexOf + 1);
-            continue outer;
-          }
-        }
-
-        return scanStart + BigInt(matchStart);
-      } while (indexOf !== -1);
+      return result;
     }
 
-    return -1n;
+    const values = lengthOrValues;
+    const scratch = new Float32Array(values.length * 0x02);
+
+    for (let i = 0, j = 0; i < values.length; i++, j += 0x02) {
+      const vector2 = values[i];
+
+      scratch[j] = vector2.x;
+      scratch[j + 0x01] = vector2.y;
+    }
+
+    this.write(address, scratch);
+
+    return this;
   }
 
   /**
-   * Search memory for a sequence of bytes or a string.
+   * Reads a 3D vector from memory or writes a 3D vector to memory.
+   * Vectors are stored as three 32-bit floats: x, y, z.
    *
-   * @param needle A `Uint8Array`, number, or string to locate.
-   * @param address Start address.
-   * @param length Number of bytes to search.
-   * @param encoding Optional encoding when `needle` is a string.
-   * @returns Address of the first match, or `-1n` if not found.
+   * @param address - Memory address to read from or write to
+   * @param value - Optional vector to write. If omitted, performs a read operation
+   * @returns The Vector3 object when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read player 3D position
+   * const position = memory.vector3(0x12345678n);
+   * console.log('Player 3D position:', position);
+   *
+   * // Teleport player to specific location
+   * memory.vector3(0x12345678n, { x: 100, y: 50, z: 200 });
+   * ```
    */
+  public vector3(address: bigint): Vector3;
+  public vector3(address: bigint, value: Vector3): this;
+  public vector3(address: bigint, value?: Vector3): Vector3 | this {
+    if (value === undefined) {
+      this.read(address, this.Scratch12);
 
-  public indexOf(needle: Uint8Array | number | string, address: bigint | number, length: bigint | number, encoding?: BufferEncoding): bigint {
-    address = BigInt(address);
-    length = BigInt(length);
+      const x = f32(this.Scratch12.ptr);
+      const y = f32(this.Scratch12.ptr, 0x04);
+      const z = f32(this.Scratch12.ptr, 0x08);
 
-    const regions = this.regions(address, length);
+      return { x, y, z };
+    }
 
-    for (const { base, size } of regions) {
-      const address_ = address > base ? address : base;
+    this.Scratch12Buffer.writeFloatLE(value.x);
+    this.Scratch12Buffer.writeFloatLE(value.y, 0x04);
+    this.Scratch12Buffer.writeFloatLE(value.z, 0x08);
 
-      const haystack = this.readBuffer(address_, base + size - address_);
-      const indexOf = haystack.indexOf(needle, 0, encoding);
+    this.write(address, this.Scratch12);
 
-      if (indexOf === -1) {
-        continue;
+    return this;
+  }
+
+  /**
+   * Reads an array of 3D vectors from memory or writes an array of 3D vectors to memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValues - Length of array to read, or array of vectors to write
+   * @returns Array of Vector3 objects when reading, or this Memory instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('game.exe');
+   *
+   * // Read vertex positions for 3D model
+   * const vertices = memory.vector3Array(0x12345678n, 500);
+   * console.log('3D vertices:', vertices);
+   *
+   * // Update vertex positions
+   * const newVertices = [
+   *   { x: 1.0, y: 0.0, z: 0.0 },
+   *   { x: 0.0, y: 1.0, z: 0.0 },
+   *   { x: 0.0, y: 0.0, z: 1.0 }
+   * ];
+   * memory.vector3Array(0x12345678n, newVertices);
+   * ```
+   */
+  public vector3Array(address: bigint, length: number): Vector3[];
+  public vector3Array(address: bigint, values: Vector3[]): this;
+  public vector3Array(address: bigint, lengthOrValues: Vector3[] | number): Vector3[] | this {
+    if (typeof lengthOrValues === 'number') {
+      const length = lengthOrValues;
+      const scratch = new Float32Array(length * 0x03);
+
+      this.read(address, scratch);
+
+      const result = new Array<Vector3>(length);
+
+      for (let i = 0, j = 0; i < length; i++, j += 0x03) {
+        const x = scratch[j];
+        const y = scratch[j + 0x01];
+        const z = scratch[j + 0x02];
+
+        result[i] = { x, y, z };
       }
 
-      return address_ + BigInt(indexOf);
+      return result;
     }
 
-    return -1n;
-  }
+    const values = lengthOrValues;
+    const scratch = new Float32Array(values.length * 0x03);
 
-  // Read/write methods…
+    for (let i = 0, j = 0; i < values.length; i++, j += 0x03) {
+      const vector3 = values[i];
 
-  /**
-   * Read a contiguous block as a `BigInt64Array`.
-   *
-   * @param address Source address.
-   * @param length Element count (not bytes).
-   * @param scratch Optional destination buffer to avoid allocations.
-   * @returns View over the backing buffer as `BigInt64Array`.
-   */
-
-  public readBigInt64Array(address: bigint | number, length: number, scratch?: Buffer): BigInt64Array {
-    const buffer = this.readBuffer(address, length * 8, scratch);
-
-    const bigUInt64Array = new BigInt64Array(buffer.buffer, buffer.byteOffset, length);
-
-    return bigUInt64Array;
-  }
-
-  /**
-   * Read a signed 64‑bit big-endian integer.
-   * @param address Source address.
-   */
-
-  public readBigInt64BE(address: bigint | number): bigint {
-    return this.readBuffer(address, 8).readBigInt64BE();
-  }
-
-  /**
-   * Read a signed 64‑bit little-endian integer.
-   * @param address Source address.
-   */
-
-  public readBigInt64LE(address: bigint | number): bigint {
-    return this.readBuffer(address, 8).readBigInt64LE();
-  }
-
-  /**
-   * Read a contiguous block as a `BigUint64Array`.
-   *
-   * @param address Source address.
-   * @param length Element count (not bytes).
-   * @param scratch Optional destination buffer.
-   * @returns View over the backing buffer as `BigUint64Array`.
-   */
-
-  public readBigUint64Array(address: bigint | number, length: number, scratch?: Buffer): BigUint64Array {
-    const buffer = this.readBuffer(address, length * 8, scratch);
-
-    const bigUInt64Array = new BigUint64Array(buffer.buffer, buffer.byteOffset, length);
-
-    return bigUInt64Array;
-  }
-
-  /**
-   * Read an unsigned 64‑bit big-endian integer.
-   * @param address Source address.
-   */
-
-  public readBigUInt64BE(address: bigint | number): bigint {
-    return this.readBuffer(address, 0x08, Memory.Scratch8).readBigUInt64BE();
-  }
-
-  /**
-   * Read an unsigned 64‑bit little-endian integer.
-   * @param address Source address.
-   */
-
-  public readBigUInt64LE(address: bigint | number): bigint {
-    return this.readBuffer(address, 0x08, Memory.Scratch8).readBigUInt64LE();
-  }
-
-  /**
-   * Read a boolean value (non-zero -> `true`).
-   * @param address Source address.
-   */
-
-  public readBoolean(address: bigint | number): boolean {
-    return Boolean(this.readUInt8(address));
-  }
-
-  /**
-   * Read raw bytes from the target process.
-   *
-   * @param address Source address.
-   * @param length Number of bytes to read.
-   * @param scratch Optional Buffer to reuse for improved performance.
-   * @returns Buffer containing the bytes read.
-   * @throws {Win32Error} If `ReadProcessMemory` fails.
-   */
-
-  public readBuffer(address: bigint | number, length: bigint | number, scratch?: Buffer): Buffer {
-    const { hProcess } = this;
-
-    address = BigInt(address);
-    length = BigInt(length);
-
-    const lpBaseAddress = address;
-    const lpBuffer = scratch ?? Buffer.allocUnsafe(Number(length));
-    const nSize = length;
-    const numberOfBytesRead = 0x00n;
-
-    const bReadProcessMemory = Kernel32.ReadProcessMemory(hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesRead);
-
-    if (!bReadProcessMemory) {
-      throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      scratch[j] = vector3.x;
+      scratch[j + 0x01] = vector3.y;
+      scratch[j + 0x02] = vector3.z;
     }
 
-    return lpBuffer;
-  }
-
-  /**
-   * Read a 64‑bit big-endian IEEE-754 float.
-   * @param address Source address.
-   */
-
-  public readDoubleBE(address: bigint | number): number {
-    return this.readBuffer(address, 0x08, Memory.Scratch8).readDoubleBE();
-  }
-
-  /**
-   * Read a 64‑bit little-endian IEEE-754 float.
-   * @param address Source address.
-   */
-
-  public readDoubleLE(address: bigint | number): number {
-    return this.readBuffer(address, 0x08, Memory.Scratch8).readDoubleLE();
-  }
-
-  // + TODO: Implement scratch…
-
-  /**
-   * Read a contiguous block as a `Float32Array`.
-   *
-   * @param address Source address.
-   * @param length Element count (not bytes).
-   * @param scratch Optional Buffer to reuse for improved performance.
-   * @returns View over the backing buffer as `Float32Array`.
-   */
-
-  public readFloat32Array(address: bigint | number, length: number, scratch?: Buffer): Float32Array {
-    const buffer = this.readBuffer(address, length * 0x04, scratch);
-
-    const float32Array = new Float32Array(buffer.buffer, buffer.byteOffset, length);
-
-    return float32Array;
-  }
-
-  /**
-   * Read a 32‑bit big-endian IEEE-754 float.
-   * @param address Source address.
-   */
-
-  public readFloatBE(address: bigint | number): number {
-    return this.readBuffer(address, 0x04, Memory.Scratch4).readFloatBE();
-  }
-
-  /**
-   * Read a 32‑bit little-endian IEEE-754 float.
-   * @param address Source address.
-   */
-
-  public readFloatLE(address: bigint | number): number {
-    return this.readBuffer(address, 0x04, Memory.Scratch4).readFloatLE();
-  }
-
-  /**
-   * Read a 16‑bit big-endian signed integer.
-   * @param address Source address.
-   */
-
-  public readInt16BE(address: bigint | number): number {
-    return this.readBuffer(address, 0x02, Memory.Scratch2).readInt16BE();
-  }
-
-  /**
-   * Read a 16‑bit little-endian signed integer.
-   * @param address Source address.
-   */
-
-  public readInt16LE(address: bigint | number): number {
-    return this.readBuffer(address, 0x02, Memory.Scratch2).readInt16LE();
-  }
-
-  /**
-   * Read a 32‑bit big-endian signed integer.
-   * @param address Source address.
-   */
-
-  public readInt32BE(address: bigint | number): number {
-    return this.readBuffer(address, 0x04, Memory.Scratch4).readInt32BE();
-  }
-
-  /**
-   * Read a 32‑bit little-endian signed integer.
-   * @param address Source address.
-   */
-
-  public readInt32LE(address: bigint | number): number {
-    return this.readBuffer(address, 0x04, Memory.Scratch4).readInt32LE();
-  }
-
-  /**
-   * Read an 8‑bit signed integer.
-   * @param address Source address.
-   */
-
-  public readInt8(address: bigint | number): number {
-    return this.readBuffer(address, 0x01, Memory.Scratch1).readInt8();
-  }
-
-  // ? I don't have the brain-power for this right now… 🫠…
-
-  /**
-   * Read a big-endian signed integer of arbitrary byte length.
-   * @param address Source address.
-   * @param byteLength Number of bytes (1–6).
-   * @param scratch Optional Buffer to reuse for improved performance.
-   */
-
-  public readIntBE(address: bigint | number, byteLength: number, scratch: Buffer): number {
-    return this.readBuffer(address, byteLength, scratch).readIntBE(0, byteLength);
-  }
-
-  /**
-   * Read a little-endian signed integer of arbitrary byte length.
-   * @param address Source address.
-   * @param byteLength Number of bytes (1–6).
-   * @param scratch Optional Buffer to reuse for improved performance.
-   */
-
-  public readIntLE(address: bigint | number, byteLength: number, scratch?: Buffer): number {
-    return this.readBuffer(address, byteLength, scratch).readIntLE(0, byteLength);
-  }
-
-  // ? …
-
-  /**
-   * Read bytes directly into the provided scratch buffer.
-   * @param address Source address.
-   * @param scratch Destination buffer; its length determines the read size.
-   * @returns The same scratch buffer for chaining.
-   */
-
-  public readInto(address: bigint | number, scratch: Buffer): Buffer {
-    this.readBuffer(address, scratch.byteLength, scratch);
-
-    return scratch;
-  }
-
-  // + TODO: Implement scratch…
-
-  /**
-   * Read a `CUtlVector`-like structure of 32‑bit elements used in some networked engines.
-   *
-   * @param address Address of the vector base structure:
-   * - `+0x00` = size (uint32)
-   * - `+0x08` = pointer to elements
-   * @param scratch Optional Buffer to reuse for improved performance.
-   * @returns A `Uint32Array` of elements, or empty if size is 0 or pointer is null.
-   */
-
-  public readNetworkUtlVectorBase(address: bigint | number, scratch?: Buffer): Uint32Array {
-    address = BigInt(address);
-
-    const size = this.readUInt32LE(address);
-
-    if (size === 0) {
-      return new Uint32Array(0);
-    }
-
-    const elementsPtr = this.readBigUInt64LE(address + 0x08n);
-
-    if (elementsPtr === 0n) {
-      return new Uint32Array(0);
-    }
-
-    const elementsBuffer = this.readBuffer(elementsPtr, size * 0x04, scratch);
-
-    return new Uint32Array(elementsBuffer.buffer, elementsBuffer.byteOffset, size);
-  }
-
-  /**
-   * Read a UTF‑8 string up to `length` bytes or until the first NUL terminator.
-   * @param address Source address.
-   * @param length Maximum number of bytes to read.
-   * @param scratch Optional Buffer to reuse for improved performance.
-   */
-
-  public readString(address: bigint | number, length: number, scratch?: Buffer): string {
-    const buffer = this.readBuffer(address, length, scratch);
-
-    const indexOf = buffer.indexOf(0);
-
-    const end = indexOf !== -1 ? indexOf : buffer.length;
-    const start = 0;
-
-    return buffer.toString('utf8', start, end);
-  }
-
-  /**
-   * Read a 16‑bit big-endian unsigned integer.
-   * @param address Source address.
-   */
-
-  public readUInt16BE(address: bigint | number): number {
-    return this.readBuffer(address, 0x02, Memory.Scratch2).readUInt16BE();
-  }
-
-  /**
-   * Read a 16‑bit little-endian unsigned integer.
-   * @param address Source address.
-   */
-
-  public readUInt16LE(address: bigint | number): number {
-    return this.readBuffer(address, 0x02, Memory.Scratch2).readUInt16LE();
-  }
-
-  /**
-   * Read a 32‑bit big-endian unsigned integer.
-   * @param address Source address.
-   */
-
-  public readUInt32BE(address: bigint | number): number {
-    return this.readBuffer(address, 0x04, Memory.Scratch4).readUInt32BE();
-  }
-
-  /**
-   * Read a 32‑bit little-endian unsigned integer.
-   * @param address Source address.
-   */
-
-  public readUInt32LE(address: bigint | number): number {
-    return this.readBuffer(address, 0x04, Memory.Scratch4).readUInt32LE();
-  }
-
-  /**
-   * Read an 8‑bit unsigned integer.
-   * @param address Source address.
-   */
-
-  public readUInt8(address: bigint | number): number {
-    return this.readBuffer(address, 0x01, Memory.Scratch1).readUInt8();
-  }
-
-  // ? I don't have the brain-power for this right now… 🫠…
-
-  /**
-   * Read a big-endian unsigned integer of arbitrary byte length.
-   * @param address Source address.
-   * @param byteLength Number of bytes (1–6).
-   * @param scratch Optional Buffer to reuse for improved performance.
-   */
-
-  public readUIntBE(address: bigint | number, byteLength: number, scratch?: Buffer): number {
-    return this.readBuffer(address, byteLength, scratch).readUIntBE(0, byteLength);
-  }
-
-  /**
-   * Read a little-endian unsigned integer of arbitrary byte length.
-   * @param address Source address.
-   * @param byteLength Number of bytes (1–6).
-   * @param scratch Optional Buffer to reuse for improved performance.
-   */
-
-  public readUIntLE(address: bigint | number, byteLength: number, scratch?: Buffer): number {
-    return this.readBuffer(address, byteLength, scratch).readUIntLE(0, byteLength);
-  }
-
-  // ? …
-
-  /**
-   * Read a {@link Vector3} (three consecutive 32‑bit floats).
-   * @param address Source address.
-   * @returns A `{ x, y, z }` object.
-   */
-
-  public readVector3(address: bigint | number): Vector3 {
-    const buffer = this.readBuffer(address, 0x0c, Memory.Scratch12);
-
-    const x = buffer.readFloatLE();
-    const y = buffer.readFloatLE(0x04);
-    const z = buffer.readFloatLE(0x08);
-
-    return { x, y, z };
-  }
-
-  // ? …
-
-  /**
-   * Write a signed 64‑bit big-endian integer.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeBigInt64BE(address: bigint | number, value: bigint, force = false): this {
-    Memory.Scratch8.writeBigInt64BE(value);
-
-    this.writeBuffer(address, Memory.Scratch8, force);
-
-    return this;
-  }
-
-  /**
-   * Write a signed 64‑bit little-endian integer.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeBigInt64LE(address: bigint | number, value: bigint, force = false): this {
-    Memory.Scratch8.writeBigInt64LE(value);
-
-    this.writeBuffer(address, Memory.Scratch8, force);
-
-    return this;
-  }
-
-  /**
-   * Write an unsigned 64‑bit big-endian integer.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeBigUInt64BE(address: bigint | number, value: bigint, force = false): this {
-    Memory.Scratch8.writeBigUInt64BE(value);
-
-    this.writeBuffer(address, Memory.Scratch8, force);
-
-    return this;
-  }
-
-  /**
-   * Write an unsigned 64‑bit little-endian integer.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeBigUInt64LE(address: bigint | number, value: bigint, force = false): this {
-    Memory.Scratch8.writeBigUInt64LE(value);
-
-    this.writeBuffer(address, Memory.Scratch8, force);
-
-    return this;
-  }
-
-  /**
-   * Write a boolean as an 8‑bit value (0 or 1).
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeBoolean(address: bigint | number, value: boolean, force = false): this {
-    Memory.Scratch1.writeUInt8(+value);
-
-    this.writeBuffer(address, Memory.Scratch1, force);
-
-    return this;
-  }
-
-  /**
-   * Write raw bytes to the target process.
-   *
-   * @param address Destination address.
-   * @param buffer Source buffer to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` and restores
-   *              the original protection after the write.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeBuffer(address: bigint | number, buffer: Buffer, force = false): this {
-    const { hProcess } = this;
-
-    address = BigInt(address);
-
-    const lpBaseAddress = address;
-    const lpBuffer = buffer;
-    // const lpNumberOfBytesWritten = 0n;
-    const nSize = BigInt(buffer.byteLength);
-
-    if (!force) {
-      const bWriteProcessMemory = Kernel32.WriteProcessMemory(hProcess, lpBaseAddress, lpBuffer, nSize, 0n);
-
-      if (!bWriteProcessMemory) {
-        throw new Win32Error('WriteProcessMemory', Kernel32.GetLastError());
-      }
-
-      return this;
-    }
-
-    const dwSize = BigInt(buffer.byteLength);
-    const flNewProtect = 0x40; /* PAGE_EXECUTE_READWRITE */
-    const lpAddress = address;
-    const lpflOldProtect = Memory.Scratch4;
-
-    const bVirtualProtectEx = !!Kernel32.VirtualProtectEx(hProcess, lpAddress, dwSize, flNewProtect, lpflOldProtect);
-
-    if (!bVirtualProtectEx) {
-      throw new Win32Error('VirtualProtectEx', Kernel32.GetLastError());
-    }
-
-    const bWriteProcessMemory = Kernel32.WriteProcessMemory(hProcess, lpBaseAddress, lpBuffer, nSize, 0n);
-
-    if (!bWriteProcessMemory) {
-      Kernel32.VirtualProtectEx(hProcess, lpAddress, nSize, lpflOldProtect.readUInt32LE(), Memory.Scratch4_2);
-
-      throw new Win32Error('WriteProcessMemory', Kernel32.GetLastError());
-    }
-
-    Kernel32.VirtualProtectEx(hProcess, lpAddress, nSize, lpflOldProtect.readUInt32LE(), Memory.Scratch4_2);
-
-    return this;
-  }
-
-  /**
-   * Write a 64‑bit big-endian IEEE-754 float.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeDoubleBE(address: bigint | number, value: number, force = false): this {
-    Memory.Scratch8.writeDoubleBE(value);
-
-    this.writeBuffer(address, Memory.Scratch8, force);
-
-    return this;
-  }
-
-  /**
-   * Write a 64‑bit little-endian IEEE-754 float.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeDoubleLE(address: bigint | number, value: number, force = false): this {
-    Memory.Scratch8.writeDoubleLE(value);
-
-    this.writeBuffer(address, Memory.Scratch8, force);
-
-    return this;
-  }
-
-  /**
-   * Write a 32‑bit big-endian IEEE-754 float.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeFloatBE(address: bigint | number, value: number, force = false): this {
-    Memory.Scratch4.writeFloatBE(value);
-
-    this.writeBuffer(address, Memory.Scratch4, force);
-
-    return this;
-  }
-
-  /**
-   * Write a 32‑bit little-endian IEEE-754 float.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeFloatLE(address: bigint | number, value: number, force = false): this {
-    Memory.Scratch4.writeFloatLE(value);
-
-    this.writeBuffer(address, Memory.Scratch4, force);
-
-    return this;
-  }
-
-  /**
-   * Write a 16‑bit big-endian signed integer.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeInt16BE(address: bigint | number, value: number, force = false): this {
-    Memory.Scratch2.writeInt16BE(value);
-
-    this.writeBuffer(address, Memory.Scratch2, force);
-
-    return this;
-  }
-
-  /**
-   * Write a 16‑bit little-endian signed integer.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeInt16LE(address: bigint | number, value: number, force = false): this {
-    Memory.Scratch2.writeInt16LE(value);
-
-    this.writeBuffer(address, Memory.Scratch2, force);
-
-    return this;
-  }
-
-  /**
-   * Write a 32‑bit big-endian signed integer.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeInt32BE(address: bigint | number, value: number, force = false): this {
-    Memory.Scratch4.writeInt32BE(value);
-
-    this.writeBuffer(address, Memory.Scratch4, force);
-
-    return this;
-  }
-
-  /**
-   * Write a 32‑bit little-endian signed integer.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeInt32LE(address: bigint | number, value: number, force = false): this {
-    Memory.Scratch4.writeInt32LE(value);
-
-    this.writeBuffer(address, Memory.Scratch4, force);
-
-    return this;
-  }
-
-  /**
-   * Write an 8‑bit signed integer.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeInt8(address: bigint | number, value: number, force = false): this {
-    Memory.Scratch1.writeInt8(value);
-
-    this.writeBuffer(address, Memory.Scratch1, force);
-
-    return this;
-  }
-
-  // + TODO: Implement scratch…
-
-  /**
-   * Write a big-endian signed integer of arbitrary byte length.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeIntBE(address: bigint | number, value: number, byteLength: number, force = false): this {
-    const buffer = Buffer.allocUnsafe(byteLength);
-    /* */ buffer.writeIntBE(value, 0, byteLength);
-
-    this.writeBuffer(address, buffer, force);
-
-    return this;
-  }
-
-  // + TODO: Implement scratch…
-
-  /**
-   * Write a little-endian signed integer of arbitrary byte length.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeIntLE(address: bigint | number, value: number, byteLength: number, force = false): this {
-    const buffer = Buffer.allocUnsafe(byteLength);
-    /* */ buffer.writeIntLE(value, 0, byteLength);
-
-    this.writeBuffer(address, buffer, force);
-
-    return this;
-  }
-
-  // + TODO: Implement scratch…
-
-  /**
-   * Write a UTF‑8 string (no terminator is appended).
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeString(address: bigint | number, value: string, force = false): this {
-    const byteLength = Buffer.byteLength(value);
-
-    const buffer = Buffer.allocUnsafe(byteLength);
-    /* */ buffer.write(value, 0, byteLength, 'utf8');
-
-    this.writeBuffer(address, buffer, force);
-
-    return this;
-  }
-
-  /**
-   * Write a 16‑bit big-endian unsigned integer.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeUInt16BE(address: bigint | number, value: number, force = false): this {
-    Memory.Scratch2.writeUInt16BE(value);
-
-    this.writeBuffer(address, Memory.Scratch2, force);
-
-    return this;
-  }
-
-  /**
-   * Write a 16‑bit little-endian unsigned integer.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeUInt16LE(address: bigint | number, value: number, force = false): this {
-    Memory.Scratch2.writeUInt16LE(value);
-
-    this.writeBuffer(address, Memory.Scratch2, force);
-
-    return this;
-  }
-
-  /**
-   * Write a 32‑bit big-endian unsigned integer.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeUInt32BE(address: bigint | number, value: number, force = false): this {
-    Memory.Scratch4.writeUInt32BE(value);
-
-    this.writeBuffer(address, Memory.Scratch4, force);
-
-    return this;
-  }
-
-  /**
-   * Write a 32‑bit little-endian unsigned integer.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeUInt32LE(address: bigint | number, value: number, force = false): this {
-    Memory.Scratch4.writeUInt32LE(value);
-
-    this.writeBuffer(address, Memory.Scratch4, force);
-
-    return this;
-  }
-
-  /**
-   * Write an 8‑bit unsigned integer.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeUInt8(address: bigint | number, value: number, force = false): this {
-    Memory.Scratch1.writeUInt8(value);
-
-    this.writeBuffer(address, Memory.Scratch1, force);
-
-    return this;
-  }
-
-  // + TODO: Implement scratch…
-
-  /**
-   * Write a big-endian unsigned integer of arbitrary byte length.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeUIntBE(address: bigint | number, value: number, byteLength: number, force = false): this {
-    const buffer = Buffer.allocUnsafe(byteLength);
-    /* */ buffer.writeUIntBE(value, 0, byteLength);
-
-    this.writeBuffer(address, buffer, force);
-
-    return this;
-  }
-
-  // + TODO: Implement scratch…
-
-  /**
-   * Write a little-endian unsigned integer of arbitrary byte length.
-   * @param address Destination address.
-   * @param value Value to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeUIntLE(address: bigint | number, value: number, byteLength: number, force = false): this {
-    const buffer = Buffer.allocUnsafe(byteLength);
-    /* */ buffer.writeUIntLE(value, 0, byteLength);
-
-    this.writeBuffer(address, buffer, force);
-
-    return this;
-  }
-
-  /**
-   * Write a {@link Vector3} as three consecutive 32-bit little-endian floats at the target address.
-   *
-   * Layout:
-   * - +0x00 = x (float32)
-   * - +0x04 = y (float32)
-   * - +0x08 = z (float32)
-   *
-   * Uses `Memory.Scratch12` to avoid allocations and delegates to {@link writeBuffer}.
-   *
-   * @param address Destination address.
-   * @param value Vector with `x`, `y`, and `z` components to write.
-   * @param force When true, temporarily enables `PAGE_EXECUTE_READWRITE` to bypass protection.
-   * @returns `this` for chaining.
-   * @throws {Win32Error} If the underlying write or protection change fails.
-   */
-
-  public writeVector3(address: bigint | number, value: Vector3, force = false): this {
-    Memory.Scratch12.writeFloatLE(value.x);
-    Memory.Scratch12.writeFloatLE(value.y, 0x04);
-    Memory.Scratch12.writeFloatLE(value.z, 0x08);
-
-    this.writeBuffer(address, Memory.Scratch12, force);
+    this.write(address, scratch);
 
     return this;
   }

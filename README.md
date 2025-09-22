@@ -1,11 +1,20 @@
-# Memory (Bun + Win32)
+# bun-memory
 
-High-performance Windows process memory utilities for [Bun](https://bun.sh) using `bun:ffi` and Kernel32 APIs.
+High-performance Windows process memory utilities for [Bun](https://bun.sh) using `bun:ffi` and Win32 APIs.
+
+## Features
+
+- Built for Bun runtime and Windows 10/11
+- Efficient buffer management for high-speed operations
+- Pattern scanning for offsets \*
+- Read and write memory of Windows processes
+
+\* — Feature temporarily disabled
 
 ## Requirements
 
-- Bun runtime (uses `bun:ffi`).
-- Windows 10/11 (uses `kernel32.dll`).
+- **Bun** (uses `bun:ffi`)
+- **Windows 10/11** (uses `kernel32.dll`)
 
 ## Installation
 
@@ -15,62 +24,56 @@ bun add bun-memory
 
 ## Usage
 
-### Basic example
+### Basic Example
 
 ```ts
 import Memory from 'bun-memory';
 
-const memory = new Memory('strounter-cike.exe');
+// Attach to process by name…
+const memory = new Memory('notepad.exe');
+// …or PID
+const memory = new Memory(1234);
 
-const clientDLL = memory.modules['client.dll'];
+// Access loaded modules
+const modules = memory.modules;
+const mainModule = modules['notepad.exe'];
+console.log(`Base address: 0x${mainModule.modBaseAddr.toString(16)}`);
+console.log(`Size: ${mainModule.modBaseSize} bytes`);
 
-if (clientDLL === undefined) {
-  // …
-}
+// Read a 32-bit integer
+const value = memory.i32(0x12345678n);
 
-const { modBaseAddr: clientBaseAddr, modBaseSize: modBaseSize } = clientDLL;
+// Write a float
+memory.f32(0x12345678n, 3.14159);
 
-// Write to your ammo…
-const ammoOffset = 0xabcdefn;
-memory.writeUInt32LE(clientBaseAddr + ammoOffset, 0x270f);
-
-// Read your health…
-const healthOffset = 0x123456n;
-const healthValue = memory.readUInt32LE(clientBaseAddr + healthOffset);
-console.log('You have %d health…', healthValue); // Your have 100 health…
-
-// Find an offset by pattern…
-const otherOffset = memory.findPattern('aa??bbccdd??ff', clientBaseAddr, clientBaseSize);
-const otherValue = memory.readBoolean(otherOffset + 0x1234n);
-
+// Clean up
 memory.close();
 ```
 
-### Reading with scratch buffers
-
-Many read methods accept an optional `scratch` `Buffer` to avoid allocations:
+### Pattern Scanning
 
 ```ts
-const myScratch = Buffer.allocUnsafe(0xf000);
-const myView = new BigUint64Array(myScratch.buffer, myScratch.byteOffset, 0xf000 / 0x08);
+const offset = memory.findPattern('aa??bbccdd??ff', mainModule.modBaseAddr, mainModule.modBaseSize);
+const value = memory.bool(offset + 0x1234n);
+memory.close();
+```
 
-// …
+### Efficient Buffer Reads
+
+```ts
+const scratch = Buffer.allocUnsafe(0xf000);
+const view = new BigUint64Array(scratch.buffer, scratch.byteOffset, 0xf000 / 8);
 
 while (true) {
-  memory.readInto(myAddress, myScratch); // Updates myView with no new allocations…
-
-  // …or…
-
-  memory.readBuffer(myAddress, 0xf000, myScratch); // Also updates myView with no new allocations…
+  memory.read(myAddress, scratch); // Updates scratch and view, no allocations
 }
 ```
 
 ```ts
-const myScratch = Buffer.allocUnsafe(0x100);
-const myValue = memory.readString(myAddress, 0x100, myScratch);
+const scratch = Buffer.allocUnsafe(0x100);
+memory.read(myAddress, scratch);
 ```
 
-### Notes
+## Notes
 
-- Bun is required; this package relies on `bun:ffi`.
-- Windows is the only supported platform.
+- Only works with Bun and Windows.
