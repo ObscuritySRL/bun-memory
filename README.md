@@ -24,6 +24,8 @@ bun add bun-memory
 
 ## Usage
 
+See [example/trigger-bot.ts](example/trigger-bot.ts) for a real-world example.
+
 ### Basic Example
 
 ```ts
