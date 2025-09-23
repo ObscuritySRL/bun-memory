@@ -363,7 +363,7 @@ class Memory {
 
     this.ScratchModuleEntry32W.writeUInt32LE(0x438 /* sizeof(MODULEENTRY32W) */);
 
-    const lpme = this.ScratchModuleEntry32W.ptr;
+    const lpme = this.ScratchModuleEntry32W;
 
     const bModule32FirstW = Kernel32.Module32FirstW(hSnapshot, lpme);
 
@@ -376,9 +376,9 @@ class Memory {
     const modules: Memory['_modules'] = {};
 
     do {
-      const modBaseAddr = this.ScratchModuleEntry32W.readBigUInt64LE(0x18);
-      const modBaseSize = this.ScratchModuleEntry32W.readUInt32LE(0x20);
-      const szModule = this.ScratchModuleEntry32W.toString('utf16le', 0x30, 0x230).replace(/\0+$/, '');
+      const modBaseAddr = lpme.readBigUInt64LE(0x18);
+      const modBaseSize = lpme.readUInt32LE(0x20);
+      const szModule = lpme.toString('utf16le', 0x30, 0x230).replace(/\0+$/, '');
 
       modules[szModule] = Object.freeze({ base: modBaseAddr, name: szModule, size: modBaseSize });
     } while (Kernel32.Module32NextW(hSnapshot, lpme));

@@ -25,7 +25,5 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-    // "types": ["./memoryjs.d.ts"]
-  },
-  "include": ["**/*.ts"]
+  }
 }
