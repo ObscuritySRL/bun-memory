@@ -439,6 +439,7 @@ class Memory {
    * @param lengthOrValue - Number of bytes to read (when reading), or `CString` to write (when writing)
    * @returns `CString` when reading, or this `Memory` instance when writing
    *
+   * @todo Investigate odd behavior when reading strings longer than `lengthOrValue`.
    * @todo Research and consider alternatives that do not require so many new allocations.
    *
    * @example

@@ -74,7 +74,7 @@
  * ```
  */
 
-import { ptr, type Pointer } from 'bun:ffi';
+import { type Pointer, ptr } from 'bun:ffi';
 
 /**
  * List of binary view constructor functions whose prototypes will be extended
@@ -236,3 +236,5 @@ constructors.forEach(({ prototype }) => {
     });
   }
 });
+
+export {};
