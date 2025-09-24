@@ -137,6 +137,65 @@ export type Module = {
 };
 
 /**
+ * Represents a contiguous vector of unsigned 32-bit integers used by the network
+ * utility subsystem.
+ *
+ * `NetworkUtlVector` is an alias of `Uint32Array`. In the target process, the
+ * vector’s elements live in an out-of-line buffer referenced by a small header
+ * at `address` (read/write via {@link Memory.networkUtlVector}):
+ *
+ * - 0x00: `uint32` size (number of elements)
+ * - 0x04: `uint32` capacity (preallocated element count)
+ * - 0x08: `uint64` pointer to contiguous `uint32` elements
+ *
+ * This alias provides a type-safe view for high-throughput operations such as
+ * batched identifier handling, index sets, and routing tables, while keeping
+ * zero-copy semantics in userland and avoiding per-element boxing.
+ *
+ * Characteristics:
+ * - Little-endian `uint32` element layout
+ * - Backed by a single contiguous elements buffer
+ * - Suitable for FFI and bulk memory transfers
+ *
+ * Usage notes:
+ * - Use {@link Memory.networkUtlVector} to read or write the elements without
+ *   reallocating the in-process buffer.
+ * - When writing, the implementation updates the size field to `values.length`
+ *   and copies elements into the existing buffer; capacity and pointer are not
+ *   modified.
+ * - Ensure `values.length` does not exceed the current capacity of the in-process
+ *   buffer to avoid truncation or undefined behavior imposed by the target.
+ *
+ * @example
+ * ```typescript
+ * const memory = new Memory('network_app.exe');
+ *
+ * // Read the current vector
+ * const ids: NetworkUtlVector = memory.networkUtlVector(0x12345678n);
+ * console.log(`Count: ${ids.length}`, Array.from(ids));
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Overwrite the vector contents (must fit existing capacity)
+ * const next: NetworkUtlVector = Uint32Array.from([101, 202, 303, 404]);
+ * memory.networkUtlVector(0x12345678n, next);
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Append in place by staging into a new typed array, then writing back
+ * const baseAddress = 0x12345678n;
+ * const current = memory.networkUtlVector(baseAddress);
+ * const extended = new Uint32Array(current.length + 1);
+ * extended.set(current);
+ * extended[extended.length - 1] = 0xDEADBEEF;
+ * memory.networkUtlVector(baseAddress, extended); // capacity must allow the new size
+ * ```
+ */
+export type NetworkUtlVector = Uint32Array;
+
+/**
  * Represents a quaternion for 3D rotations.
  *
  * Quaternions are a mathematical representation of rotations in 3D space that

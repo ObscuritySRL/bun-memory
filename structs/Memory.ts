@@ -4,7 +4,7 @@
 
 import { CString, FFIType, dlopen, read } from 'bun:ffi';
 
-import type { Module, Quaternion, Region, Scratch, Vector2, Vector3 } from '../types/Memory';
+import type { Module, NetworkUtlVector, Quaternion, Region, Scratch, Vector2, Vector3 } from '../types/Memory';
 import Win32Error from './Win32Error';
 
 const { f32, f64, i16, i32, i64, i8, u16, u32, u64, u8 } = read;
@@ -913,6 +913,58 @@ class Memory {
     const values = lengthOrValues;
 
     this.write(address, values);
+
+    return this;
+  }
+
+  /**
+   * Reads a `NetworkUtlVector` (`Uint32Array`) from memory or writes a `NetworkUtlVector` to memory.
+   *
+   * The vector is represented in memory as a small header with an out-of-line elements buffer.
+   * Layout at `address`:
+   * - 0x00: `uint32` size (number of elements)
+   * - 0x04: `uint32` capacity/reserved (not modified by this method)
+   * - 0x08: `uint64` pointer to a contiguous array of `uint32` elements
+   *
+   * When reading, this method returns a `Uint32Array` containing `size` elements copied from the
+   * elements pointer. When writing, it updates the size field and writes the provided values to the
+   * existing elements buffer (no reallocation is performed).
+   *
+   * @param address - Memory address of the vector header to read from or write to
+   * @param values - Optional `NetworkUtlVector` to write. If omitted, performs a read operation
+   * @returns `NetworkUtlVector` when reading, or this `Memory` instance when writing
+   *
+   * @example
+   * ```typescript
+   * const memory = new Memory('network_app.exe');
+   *
+   * // Read the current vector
+   * const ids = memory.networkUtlVector(0x12345678n);
+   * console.log('IDs:', Array.from(ids));
+   *
+   * // Write new values (must fit the existing buffer capacity)
+   * const next = new Uint32Array([10, 20, 30, 40]);
+   * memory.networkUtlVector(0x12345678n, next);
+   * ```
+   */
+  public networkUtlVector(address: bigint): NetworkUtlVector;
+  public networkUtlVector(address: bigint, values: NetworkUtlVector): this;
+  public networkUtlVector(address: bigint, values?: NetworkUtlVector): NetworkUtlVector | this {
+    const elementsPtr = this.u64(address + 0x08n);
+
+    if (values === undefined) {
+      const size = this.u32(address);
+
+      const scratch = new Uint32Array(size);
+
+      this.read(elementsPtr, scratch);
+
+      return scratch;
+    }
+
+    this.u32(address, values.length);
+
+    this.write(elementsPtr, values);
 
     return this;
   }
