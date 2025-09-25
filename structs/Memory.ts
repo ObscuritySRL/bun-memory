@@ -459,7 +459,7 @@ class Memory {
   public cString(address: bigint, value: CString): this;
   public cString(address: bigint, lengthOrValue: number | CString): CString | this {
     if (typeof lengthOrValue === 'number') {
-      const scratch = Buffer.allocUnsafe(lengthOrValue);
+      const scratch = new Uint8Array(lengthOrValue);
 
       this.read(address, scratch);
 
