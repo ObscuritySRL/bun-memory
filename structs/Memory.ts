@@ -1,10 +1,6 @@
-// TODO: Reintroduce findPattern(…)…
-// TODO: Reintroduce indexOf(…)…
-// TODO: String methods…
-
 import { CString, FFIType, dlopen, read } from 'bun:ffi';
 
-import type { Module, NetworkUtlVector, Quaternion, Region, Scratch, Vector2, Vector3 } from '../types/Memory';
+import type { Module, NetworkUtlVector, QAngle, Quaternion, Region, Scratch, Vector2, Vector3, Vector4 } from '../types/Memory';
 import Win32Error from './Win32Error';
 
 const { f32, f64, i16, i32, i64, i8, u16, u32, u64, u8 } = read;
@@ -32,6 +28,9 @@ const { symbols: Kernel32 } = dlopen('kernel32.dll', {
  * Memory class provides cross-process memory manipulation capabilities on Windows systems.
  * This class allows reading from and writing to memory addresses in external processes,
  * supporting various data types including primitives, arrays, and custom structures like vectors and quaternions.
+ *
+ * @todo Reimplement `findPattern(…)`.
+ * @todo Reimplement `indexOf(…)`.
  *
  * @example
  * ```typescript
@@ -168,7 +167,16 @@ class Memory {
   private readonly ScratchMemoryBasicInformation = Buffer.allocUnsafe(0x30 /* sizeof(MEMORY_BASIC_INFORMATION) */);
   private readonly ScratchModuleEntry32W = Buffer.allocUnsafe(0x438 /* sizeof(MODULEENTRY32W) */);
 
+  /**
+   * Reusable UTF-16 decoder for interpreting raw process memory as UTF-16 text.
+   * Kept as a singleton to avoid repeated allocations in hot paths.
+   */
   private static readonly TextDecoderUTF16 = new TextDecoder('utf-16');
+
+  /**
+   * Reusable UTF-8 decoder for interpreting raw process memory as UTF-8 text.
+   * Kept as a singleton to avoid repeated allocations in hot paths.
+   */
   private static readonly TextDecoderUTF8 = new TextDecoder('utf-8');
 
   /**
@@ -933,6 +941,26 @@ class Memory {
     return this;
   }
 
+  public matrix3x4(address: bigint): Float32Array;
+  public matrix3x4(address: bigint, values: Float32Array): this;
+  public matrix3x4(address: bigint, values?: Float32Array): Float32Array | this {
+    if (values === undefined) {
+      const scratch = new Float32Array(0x0c);
+
+      this.read(address, scratch);
+
+      return scratch;
+    }
+
+    if (values.length !== 0x0c) {
+      throw new RangeError('values.length must be 12.');
+    }
+
+    this.write(address, values);
+
+    return this;
+  }
+
   /**
    * Reads a 4×4 matrix from memory or writes a 4×4 matrix to memory.
    *
@@ -1025,6 +1053,103 @@ class Memory {
     this.u32(address, values.length);
 
     this.write(elementsPtr, values);
+
+    return this;
+  }
+
+  /**
+   * Reads a set of Euler angles from memory or writes a set of Euler angles to memory.
+   *
+   * Angles are stored as three 32-bit floats in the order **pitch, yaw, roll**.
+   *
+   * @param address - Memory address to read from or write to
+   * @param value - Optional `QAngle` to write. If omitted, performs a read operation
+   * @returns The `QAngle` value when reading, or this `Memory` instance when writing
+   *
+   * @example
+   * ```typescript
+   * // Read current view angles
+   * const view = memory.qAngle(0x12345678n);
+   *
+   * // Write new view angles (e.g., level the roll)
+   * memory.qAngle(0x12345678n, { ...view, roll: 0 });
+   * ```
+   */
+
+  public qAngle(address: bigint): QAngle;
+  public qAngle(address: bigint, value: QAngle): this;
+  public qAngle(address: bigint, value?: QAngle): QAngle | this {
+    if (value === undefined) {
+      this.read(address, this.Scratch12);
+
+      const pitch = f32(this.Scratch12.ptr);
+      const roll = f32(this.Scratch12.ptr, 0x08);
+      const yaw = f32(this.Scratch12.ptr, 0x04);
+
+      return { pitch, roll, yaw };
+    }
+
+    this.Scratch12Buffer.writeFloatLE(value.pitch);
+    this.Scratch12Buffer.writeFloatLE(value.roll, 0x08);
+    this.Scratch12Buffer.writeFloatLE(value.yaw, 0x04);
+
+    this.write(address, this.Scratch12);
+
+    return this;
+  }
+
+  /**
+   * Reads an array of Euler angles from memory or writes an array of Euler angles to memory.
+   *
+   * Each element is three 32-bit floats in the order **pitch, yaw, roll**.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValues - Length of array to read, or array of `QAngle` values to write
+   * @returns `QAngle[]` when reading, or this `Memory` instance when writing
+   *
+   * @example
+   * ```typescript
+   * // Read bone aim offsets
+   * const bones = memory.qAngleArray(0x12345678n, 64);
+   *
+   * // Write new bone angles (e.g., reset all roll to zero)
+   * bones.forEach(b => (b.roll = 0));
+   * memory.qAngleArray(0x12345678n, bones);
+   * ```
+   */
+  public qAngleArray(address: bigint, length: number): QAngle[];
+  public qAngleArray(address: bigint, values: QAngle[]): this;
+  public qAngleArray(address: bigint, lengthOrValues: QAngle[] | number): QAngle[] | this {
+    if (typeof lengthOrValues === 'number') {
+      const length = lengthOrValues;
+      const scratch = new Float32Array(length * 0x03);
+
+      this.read(address, scratch);
+
+      const result = new Array<QAngle>(length);
+
+      for (let i = 0, j = 0; i < length; i++, j += 0x03) {
+        const pitch = scratch[j];
+        const yaw = scratch[j + 0x01];
+        const roll = scratch[j + 0x02];
+        result[i] = { pitch, yaw, roll };
+      }
+
+      return result;
+    }
+
+    const values = lengthOrValues;
+    const scratch = new Float32Array(values.length * 0x03);
+
+    for (let i = 0, j = 0; i < values.length; i++, j += 0x03) {
+      const qAngle = values[i];
+
+      scratch[j] = qAngle.pitch;
+      scratch[j + 0x02] = qAngle.roll;
+      scratch[j + 0x01] = qAngle.yaw;
+    }
+
+    this.write(address, scratch);
 
     return this;
   }
@@ -1603,6 +1728,67 @@ class Memory {
     this.write(address, scratch);
 
     return this;
+  }
+
+  /**
+   * Reads a 4D vector from memory or writes a 4D vector to memory.
+   *
+   * Uses the same 16-byte layout as {@link Memory.quaternion}: four 32-bit floats
+   * stored in the order **x, y, z, w**. Returned objects are shaped as `{ w, x, y, z }`.
+   *
+   * @param address - Memory address to read from or write to
+   * @param value - Optional `Vector4` to write. If omitted, performs a read operation
+   * @returns The `Vector4` value when reading, or this `Memory` instance when writing
+   *
+   * @example
+   * ```typescript
+   * // Read directional data in projective space
+   * const value = memory.vector4(0x12345678n);
+   *
+   * // Write a vector4 value (e.g., identity quaternion)
+   * memory.vector4(0x12345678n, { x: 0, y: 0, z: 0, w: 1 });
+   * ```
+   */
+  public vector4(address: bigint): Vector4;
+  public vector4(address: bigint, value: Vector4): this;
+  public vector4(address: bigint, value?: Vector4): Vector4 | this {
+    // TypeScript is funny sometimes, isn't it?… 🫠…
+    if (value === undefined) {
+      return this.quaternion(address);
+    }
+
+    return this.quaternion(address, value);
+  }
+
+  /**
+   * Reads an array of 4D vectors from memory or writes an array of 4D vectors to memory.
+   *
+   * Each element uses the same 16-byte layout as {@link Memory.quaternionArray}:
+   * four 32-bit floats stored in the order **x, y, z, w**.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValues - Length of array to read, or array of `Vector4` values to write
+   * @returns `Vector4[]` when reading, or this `Memory` instance when writing
+   *
+   * @example
+   * ```typescript
+   * // Read per-vertex tangent vectors (xyzw)
+   * const tangents = memory.vector4Array(0x12345678n, 1024);
+   *
+   * // Write tangent vectors (eg. normalize w to 1.0)
+   * tangents.forEach(v => (v.w = 1.0));
+   * memory.vector4Array(0x12345678n, tangents);
+   * ```
+   */
+  public vector4Array(address: bigint, length: number): Vector4[];
+  public vector4Array(address: bigint, values: Vector4[]): this;
+  public vector4Array(address: bigint, lengthOrValues: Vector4[] | number): Vector4[] | this {
+    // TypeScript is funny sometimes, isn't it?… 🫠…
+    if (typeof lengthOrValues === 'number') {
+      return this.quaternionArray(address, lengthOrValues);
+    }
+
+    return this.quaternionArray(address, lengthOrValues);
   }
 }
 

@@ -320,6 +320,68 @@ export type Quaternion = {
 };
 
 /**
+ * Represents an orientation using Euler angles.
+ *
+ * `QAngle` stores three 32-bit floating-point angles that describe rotation
+ * in degrees around the principal axes: `pitch` (X), `yaw` (Y), and `roll` (Z).
+ * This format is common in Source-engine-style telemetry and many gameplay
+ * camera systems. For quaternions, see {@link Quaternion}.
+ *
+ * Typical uses include:
+ * - Camera/view rotations
+ * - Bone/attachment orientations
+ * - Aim and recoil calculations
+ *
+ * @example
+ * ```typescript
+ * // Read and tweak view angles
+ * const view: QAngle = memory.qAngle(0x12345678n);
+ * const leveled: QAngle = { pitch: 0, yaw: view.yaw, roll: 0 };
+ * memory.qAngle(0x12345678n, leveled);
+ * ```
+ */
+export interface QAngle {
+  /**
+   * Rotation around the X axis, in degrees.
+   *
+   * Positive values pitch the nose downward in many right-handed game
+   * coordinate systems; verify the target engine’s convention before writing.
+   *
+   * @example
+   * ```typescript
+   * const aimDown: QAngle = { pitch: 10, yaw: 0, roll: 0 };
+   * ```
+   */
+  pitch: number;
+
+  /**
+   * Rotation around the Z axis, in degrees.
+   *
+   * Often used for banking/tilt effects. Some engines clamp or ignore roll for
+   * first-person cameras.
+   *
+   * @example
+   * ```typescript
+   * const slightBank: QAngle = { pitch: 0, yaw: 0, roll: 5 };
+   * ```
+   */
+  roll: number;
+
+  /**
+   * Rotation around the Y axis, in degrees.
+   *
+   * Positive values typically turn to the right (clockwise when viewed from
+   * above) in right-handed systems.
+   *
+   * @example
+   * ```typescript
+   * const turnRight: QAngle = { pitch: 0, yaw: 90, roll: 0 };
+   * ```
+   */
+  yaw: number;
+}
+
+/**
  * Represents a memory region with its properties and protection flags.
  *
  * Memory regions are contiguous blocks of virtual memory with uniform properties
@@ -789,5 +851,34 @@ export type Vector3 = {
    * const color: Vector3 = { x: 255, y: 128, z: 64 };   // Blue component = 64
    * ```
    */
+  z: number;
+};
+
+/**
+ * Represents a 4D vector with w, x, y, z components.
+ *
+ * Common use cases:
+ * - Homogeneous coordinates (w ≠ 0)
+ * - Colors with alpha (x = R, y = G, z = B, w = A)
+ * - Packed attributes and shader parameters
+ * - As a quaternion carrier when interoperating with APIs expecting {x,y,z,w}
+ *
+ * Memory layout used by {@link Memory.vector4} is four 32-bit floats stored in
+ * the order **x, y, z, w**, while this type exposes `{ w, x, y, z }` for
+ * consistency with {@link Quaternion}.
+ *
+ * @example
+ * ```typescript
+ * // RGBA color
+ * const red: Vector4 = { x: 255, y: 0, z: 0, w: 255 };
+ *
+ * // Homogeneous point (x, y, z, w)
+ * const p: Vector4 = { x: 10, y: 20, z: 30, w: 1 };
+ * ```
+ */
+export type Vector4 = {
+  w: number;
+  x: number;
+  y: number;
   z: number;
 };
