@@ -168,6 +168,9 @@ class Memory {
   private readonly ScratchMemoryBasicInformation = Buffer.allocUnsafe(0x30 /* sizeof(MEMORY_BASIC_INFORMATION) */);
   private readonly ScratchModuleEntry32W = Buffer.allocUnsafe(0x438 /* sizeof(MODULEENTRY32W) */);
 
+  private static readonly TextDecoderUTF16 = new TextDecoder('utf-16');
+  private static readonly TextDecoderUTF8 = new TextDecoder('utf-8');
+
   /**
    * Handle to the target process.
    */
@@ -185,7 +188,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('notepad.exe');
    * const modules = memory.modules;
    *
    * // Access a specific module
@@ -211,7 +213,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('notepad.exe');
    * const regions = memory.regions(0x10000000n, 0x1000n);
    *
    * regions.forEach(region => {
@@ -265,7 +266,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('notepad.exe');
    * const buffer = new Uint8Array(4);
    * memory.read(0x12345678n, buffer);
    * ```
@@ -295,7 +295,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('notepad.exe');
    * const buffer = new Uint8Array([0x41, 0x42, 0x43, 0x44]);
    * memory.write(0x12345678n, buffer);
    * ```
@@ -342,8 +341,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('notepad.exe');
-   *
    * // Initial modules
    * console.log('Initial modules:', Object.keys(memory.modules));
    *
@@ -401,8 +398,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read a boolean value
    * const isAlive = memory.bool(0x12345678n);
    * console.log('Player is alive:', isAlive);
@@ -444,14 +439,14 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read up to 64 bytes and interpret as a C string
    * const playerName = memory.cString(0x12345678n, 64);
    * console.log('Player name:', playerName.toString());
    *
    * // Write a C string (NUL-terminated)
-   * const value = new CString('PlayerOne');
+   * const valueBuffer = Buffer.from('PlayerOne\0');
+   * const valuePtr = ptr(valueBuffer);
+   * const value = new CString(valuePtr);
    * memory.cString(0x12345678n, value);
    * ```
    */
@@ -482,8 +477,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read a float value
    * const playerHealth = memory.f32(0x12345678n);
    * console.log('Player health:', playerHealth);
@@ -517,8 +510,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read an array of 10 float values
    * const coordinates = memory.f32Array(0x12345678n, 10);
    * console.log('Coordinates:', coordinates);
@@ -556,8 +547,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('scientific_app.exe');
-   *
    * // Read a double precision value
    * const preciseValue = memory.f64(0x12345678n);
    * console.log('Precise value:', preciseValue);
@@ -591,8 +580,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('scientific_app.exe');
-   *
    * // Read an array of 5 double precision values
    * const preciseData = memory.f64Array(0x12345678n, 5);
    * console.log('Precise data:', preciseData);
@@ -630,8 +617,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read a signed 16-bit integer
    * const temperature = memory.i16(0x12345678n);
    * console.log('Temperature:', temperature);
@@ -665,8 +650,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('audio_app.exe');
-   *
    * // Read an array of audio samples
    * const samples = memory.i16Array(0x12345678n, 1024);
    * console.log('Audio samples:', samples);
@@ -704,8 +687,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read a player's score
    * const score = memory.i32(0x12345678n);
    * console.log('Player score:', score);
@@ -739,8 +720,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read inventory item counts
    * const inventory = memory.i32Array(0x12345678n, 20);
    * console.log('Inventory:', inventory);
@@ -778,8 +757,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('database.exe');
-   *
    * // Read a large number (timestamp, file size, etc.)
    * const timestamp = memory.i64(0x12345678n);
    * console.log('Timestamp:', timestamp);
@@ -813,8 +790,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('database.exe');
-   *
    * // Read an array of large numbers
    * const largeNumbers = memory.i64Array(0x12345678n, 10);
    * console.log('Large numbers:', largeNumbers);
@@ -852,8 +827,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read a small signed value (e.g., direction, state)
    * const direction = memory.i8(0x12345678n);
    * console.log('Direction:', direction);
@@ -887,8 +860,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read an array of small signed values
    * const directions = memory.i8Array(0x12345678n, 8);
    * console.log('Movement directions:', directions);
@@ -918,6 +889,97 @@ class Memory {
   }
 
   /**
+   * Reads a 3×3 matrix from memory or writes a 3×3 matrix to memory.
+   *
+   * The matrix is represented as 9 contiguous 32-bit floating-point values (`Float32Array`).
+   * No transposition or stride is applied—values are copied exactly as stored in memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param values - Optional `Float32Array` of length 9 to write. If omitted, performs a read operation
+   * @returns `Float32Array` of length 9 when reading, or this `Memory` instance when writing
+   * @throws {RangeError} When `values.length` is not exactly 9
+   *
+   * @example
+   * ```typescript
+   * // Read a 3×3 matrix
+   * const matrix = memory.matrix3x3(0x12345678n); // Float32Array(9)
+   *
+   * // Write a 3×3 matrix (length must be 9)
+   * const next = new Float32Array([
+   *   1, 0, 0,
+   *   0, 1, 0,
+   *   0, 0, 1
+   * ]);
+   * memory.matrix3x3(0x12345678n, next);
+   * ```
+   */
+  public matrix3x3(address: bigint): Float32Array;
+  public matrix3x3(address: bigint, values: Float32Array): this;
+  public matrix3x3(address: bigint, values?: Float32Array): Float32Array | this {
+    if (values === undefined) {
+      const scratch = new Float32Array(0x09);
+
+      this.read(address, scratch);
+
+      return scratch;
+    }
+
+    if (values.length !== 0x09) {
+      throw new RangeError('values.length must be 9.');
+    }
+
+    this.write(address, values);
+
+    return this;
+  }
+
+  /**
+   * Reads a 4×4 matrix from memory or writes a 4×4 matrix to memory.
+   *
+   * The matrix is represented as 16 contiguous 32-bit floating-point values (`Float32Array`).
+   * No transposition or stride is applied—values are copied exactly as stored in memory.
+   *
+   * @param address - Memory address to read from or write to
+   * @param values - Optional `Float32Array` of length 16 to write. If omitted, performs a read operation
+   * @returns `Float32Array` of length 16 when reading, or this `Memory` instance when writing
+   * @throws {RangeError} When `values.length` is not exactly 16
+   *
+   * @example
+   * ```typescript
+   * // Read a 4×4 matrix
+   * const matrix = memory.matrix4x4(0x12345678n); // Float32Array(16)
+   *
+   * // Write a 4×4 matrix (length must be 16)
+   * const next = new Float32Array([
+   *   1, 0, 0, 0,
+   *   0, 1, 0, 0,
+   *   0, 0, 1, 0,
+   *   0, 0, 0, 1
+   * ]);
+   * memory.matrix4x4(0x12345678n, next);
+   * ```
+   */
+  public matrix4x4(address: bigint): Float32Array;
+  public matrix4x4(address: bigint, values: Float32Array): this;
+  public matrix4x4(address: bigint, values?: Float32Array): Float32Array | this {
+    if (values === undefined) {
+      const scratch = new Float32Array(0x10);
+
+      this.read(address, scratch);
+
+      return scratch;
+    }
+
+    if (values.length !== 0x10) {
+      throw new RangeError('values.length must be 16.');
+    }
+
+    this.write(address, values);
+
+    return this;
+  }
+
+  /**
    * Reads a `NetworkUtlVector` (`Uint32Array`) from memory or writes a `NetworkUtlVector` to memory.
    *
    * The vector is represented in memory as a small header with an out-of-line elements buffer.
@@ -936,8 +998,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('network_app.exe');
-   *
    * // Read the current vector
    * const ids = memory.networkUtlVector(0x12345678n);
    * console.log('IDs:', Array.from(ids));
@@ -979,8 +1039,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read player rotation
    * const rotation = memory.quaternion(0x12345678n);
    * console.log('Player rotation:', rotation);
@@ -1022,8 +1080,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read bone rotations for skeletal animation
    * const boneRotations = memory.quaternionArray(0x12345678n, 50);
    * console.log('Bone rotations:', boneRotations);
@@ -1082,8 +1138,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read a port number or small positive value
    * const port = memory.u16(0x12345678n);
    * console.log('Network port:', port);
@@ -1117,8 +1171,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('network_app.exe');
-   *
    * // Read an array of port numbers
    * const ports = memory.u16Array(0x12345678n, 10);
    * console.log('Active ports:', ports);
@@ -1156,8 +1208,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read player's money (always positive)
    * const money = memory.u32(0x12345678n);
    * console.log('Player money:', money);
@@ -1191,8 +1241,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read resource amounts
    * const resources = memory.u32Array(0x12345678n, 6);
    * console.log('Resources:', resources);
@@ -1230,8 +1278,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('database.exe');
-   *
    * // Read a very large positive number
    * const recordId = memory.u64(0x12345678n);
    * console.log('Record ID:', recordId);
@@ -1265,8 +1311,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('database.exe');
-   *
    * // Read an array of record IDs
    * const recordIds = memory.u64Array(0x12345678n, 100);
    * console.log('Record IDs:', recordIds);
@@ -1304,8 +1348,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read a byte value (0-255)
    * const opacity = memory.u8(0x12345678n);
    * console.log('UI opacity:', opacity);
@@ -1339,8 +1381,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('image_editor.exe');
-   *
    * // Read pixel data
    * const pixels = memory.u8Array(0x12345678n, 1024);
    * console.log('Pixel data:', pixels);
@@ -1379,8 +1419,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read player position
    * const position = memory.vector2(0x12345678n);
    * console.log('Player position:', position);
@@ -1418,8 +1456,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read waypoints for AI pathfinding
    * const waypoints = memory.vector2Array(0x12345678n, 20);
    * console.log('AI waypoints:', waypoints);
@@ -1479,8 +1515,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read player 3D position
    * const position = memory.vector3(0x12345678n);
    * console.log('Player 3D position:', position);
@@ -1520,8 +1554,6 @@ class Memory {
    *
    * @example
    * ```typescript
-   * const memory = new Memory('game.exe');
-   *
    * // Read vertex positions for 3D model
    * const vertices = memory.vector3Array(0x12345678n, 500);
    * console.log('3D vertices:', vertices);
