@@ -30,7 +30,6 @@ const { symbols: Kernel32 } = dlopen('kernel32.dll', {
  * supporting various data types including primitives, arrays, and custom structures like vectors and quaternions.
  *
  * @todo Reimplement `findPattern(…)`.
- * @todo Reimplement `indexOf(…)`.
  *
  * @example
  * ```typescript
@@ -322,7 +321,7 @@ class Memory {
     return;
   }
 
-  // Public utility methods
+  // Public read / write methods…
 
   /**
    * Closes the handle to the target process and releases resources.
@@ -1789,6 +1788,58 @@ class Memory {
     }
 
     return this.quaternionArray(address, lengthOrValues);
+  }
+
+  // Public utility methods…
+
+  /**
+   * Searches a memory range for a byte sequence and returns the absolute address of the first match.
+   *
+   * This method reads `length` bytes starting at `address` into a temporary buffer and performs a
+   * subsequence search. No region or protection checking is performed; ensure the range is readable
+   * before calling.
+   *
+   * The `needle` accepts any Scratch-compatible buffer or view (`Buffer`, `TypedArray`, or `DataView`).
+   * Bytes are matched exactly as laid out in memory. :contentReference[oaicite:0]{index=0}
+   *
+   * @param needle - Byte sequence to search for (Scratch-compatible buffer or view)
+   * @param address - Base memory address to begin searching (inclusive)
+   * @param length - Number of bytes to scan
+   * @returns Absolute address (`bigint`) of the first match, or `-1n` when not found
+   *
+   * @example
+   * ```typescript
+   * // Search a loaded module for a byte sequence
+   * const client = memory.modules['client.dll'];
+   *
+   * const needle = Buffer.from([0x48, 0x8B, 0x05, 0x00, 0x00, 0x00, 0x00]);
+   * const matchAddress = memory.indexOf(needle, client.base, client.size);
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // Search using a Uint32Array needle (bytes are matched exactly as laid out in memory)
+   * const needle = new Uint32Array([0xDEADBEEF, 0x11223344]);
+   * const matchAddress = memory.indexOf(needle, client.base, client.size);
+   * ```
+   */
+
+  public indexOf(needle: Scratch, address: bigint, length: number): bigint {
+    const haystackUint8Array = new Uint8Array(length);
+
+    this.read(address, haystackUint8Array);
+
+    const haystackBuffer = Buffer.from(haystackUint8Array.buffer, haystackUint8Array.byteOffset, haystackUint8Array.byteLength);
+
+    const needleUint8Array = ArrayBuffer.isView(needle) //
+      ? new Uint8Array(needle.buffer, needle.byteOffset, needle.byteLength)
+      : new Uint8Array(needle);
+
+    const needleBuffer = Buffer.from(needleUint8Array.buffer, needleUint8Array.byteOffset, needleUint8Array.byteLength);
+
+    const indexOf = haystackBuffer.indexOf(needleBuffer);
+
+    return indexOf !== -1 ? BigInt(indexOf) + address : -1n;
   }
 }
 
