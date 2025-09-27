@@ -125,24 +125,35 @@ while (true) {
 }
 ```
 
-```ts
-const scratch = Buffer.allocUnsafe(0x100);
-memory.read(myAddress, scratch);
-```
+### Searching Memory
 
-```ts
-const scratch = new Uint32Array(0x10);
-memory.read(myAddress, scratch);
-```
-
-### Pattern Scanning
+#### `findPattern`
 
 Pattern scanning is temporarily disabled but will return shortly.
 
+#### `indexOf`
+
+Find the first occurrence of a byte sequence within a memory range and return the absolute address (`bigint`) of the first match, or `-1n` when not found. Accepts any Scratch-compatible input (`Buffer`, `TypedArray`, `DataView`, `ArrayBuffer`, or `SharedArrayBuffer`). No region or protection checking is performed; ensure the range is readable before calling.
+
 ```ts
-const offset = memory.findPattern('aa??bbccdd??ff', mainModule.modBaseAddr, mainModule.modBaseSize);
-const value = memory.bool(offset + 0x1234n);
-memory.close();
+// Attach…
+const memory = new Memory('cs2.exe');
+
+// Get the loaded client.dll…
+const client = cs2.modules['client.dll'];
+
+// Choose any Scratch type for the needle (bytes are matched exactly as laid out in memory).
+const needle = Buffer.from([0x48, 0x8b, 0x05, 0x00, 0x00, 0x00, 0x00]);
+// const needle = new Uint8Array([0x48, 0x8B, 0x05, 0x00, 0x00, 0x00, 0x00]);
+// const needle = new Uint32Array([0xDEADBEEF, 0x11223344]);
+// const needle = new DataView(Uint8Array.from([0xde, 0xad, 0xbe, 0xef]).buffer);
+
+// Search client.dll for the byte sequence…
+const addeess = memory.indexOf(needle, client.base, client.size);
+
+if (address !== -1n) {
+  console.log(`Found at 0x${address.toString(16)}`);
+}
 ```
 
 ## Notes
