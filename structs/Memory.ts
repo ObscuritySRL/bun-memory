@@ -279,9 +279,7 @@ class Memory {
    *
    * @param address - Starting absolute memory address (BigInt).
    * @param offsets - Readonly list of `bigint` offsets that define the pointer path.
-   * @param throw_ - When `true`, throw on a null pointer encounter (default: `false`).
-   * @returns The resolved absolute address, or `-1n` if a null pointer was encountered and `throw_` is `false`.
-   * @throws {Error} When a null pointer is encountered and `throw_` is `true`.
+   * @returns The resolved absolute address, or `-1n` if a null pointer was encountered.
    *
    * @example
    * ```typescript
@@ -295,26 +293,18 @@ class Memory {
    * }
    * ```
    */
-  public follow(address: bigint, offsets: readonly bigint[], throw_ = false): bigint {
+  public follow(address: bigint, offsets: readonly bigint[]): bigint {
     const last = offsets.length - 1;
-
-    if (last === -1) {
-      return address;
-    }
 
     for (let i = 0; i < last; i++) {
       address = this.u64((address += offsets[i]));
 
       if (address === 0n) {
-        if (throw_) {
-          throw new Error('address must not be 0n.');
-        }
-
         return -1n;
       }
     }
 
-    return address + offsets[last];
+    return address + (offsets[last] ?? 0n);
   }
 
   /**
@@ -330,6 +320,7 @@ class Memory {
    * @returns The same scratch instance you passed in, typed as `T`.
    * @throws {Win32Error} When the underlying `ReadProcessMemory` call fails.
    *
+   * @todo Remove the need for allocation if `bigint[]` is passed.
    * @todo Research what it will take to add CString to the Scratch type.
    *
    * @example
