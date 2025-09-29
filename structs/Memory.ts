@@ -261,23 +261,34 @@ class Memory {
   // Core memory operations
 
   /**
-   * Reads data from the target process memory into a scratch buffer.
-   * This is a low-level method used internally by the typed read methods.
+   * Reads data from the target process memory into the provided scratch buffer and returns that
+   * same scratch object (strongly typed). This is a low-level, zero-copy helper used internally by
+   * typed readers.
    *
-   * @param address - Memory address to read from
-   * @param scratch - Buffer to store the read data
-   * @returns This Memory instance for method chaining
-   * @throws {Win32Error} When the read operation fails
+   * @typeParam T - Concrete scratch type extending {@link Scratch} (for example, `Scratch16`,
+   * `Scratch32`, a CString scratch, etc.).
+   *
+   * @param address - Absolute memory address to read from (BigInt).
+   * @param scratch - Destination scratch instance to receive the bytes.
+   * @returns The same scratch instance you passed in, typed as `T`.
+   * @throws {Win32Error} When the underlying `ReadProcessMemory` call fails.
    *
    * @todo Research what it will take to add CString to the Scratch type.
    *
    * @example
-   * ```typescript
-   * const buffer = new Uint8Array(4);
-   * memory.read(0x12345678n, buffer);
+   * ```ts
+   * // Strongly typed result based on the scratch you pass in:
+   * const s16 = memory.Scratch16;
+   * const out16 = memory.read(0x12345678n, s16);
+   * ```
+   *
+   * @example
+   * ```ts
+   * const myScratch = Buffer.allocUnsafe(64);
+   * const out = memory.read(0x1000_2000n, myScratch);
    * ```
    */
-  public read(address: bigint, scratch: Scratch): this {
+  public read<T extends Scratch>(address: bigint, scratch: T): T {
     const lpBaseAddress = address;
     const lpBuffer = scratch.ptr;
     const nSize = scratch.byteLength;
@@ -289,7 +300,7 @@ class Memory {
       throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
     }
 
-    return this;
+    return scratch;
   }
 
   /**
@@ -306,7 +317,7 @@ class Memory {
    * memory.write(0x12345678n, buffer);
    * ```
    */
-  private write(address: bigint, scratch: Scratch): void {
+  private write(address: bigint, scratch: Scratch): this {
     const lpBaseAddress = address;
     const lpBuffer = scratch.ptr;
     const nSize = scratch.byteLength;
@@ -318,7 +329,7 @@ class Memory {
       throw new Win32Error('WriteProcessMemory', Kernel32.GetLastError());
     }
 
-    return;
+    return this;
   }
 
   // Public read / write methods…
