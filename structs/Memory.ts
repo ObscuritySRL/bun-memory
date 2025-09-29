@@ -430,6 +430,47 @@ class Memory {
   }
 
   /**
+   * Reads a raw byte buffer from memory or writes a raw byte buffer to memory.
+   *
+   * When reading, exactly `length` bytes are copied from `address` into a new `Buffer`.
+   * Bytes are returned exactly as laid out in memory—no decoding, alignment, or transformation
+   * is applied. When writing, the contents of `value` are copied to `address` verbatim.
+   *
+   * @param address - Memory address to read from or write to
+   * @param lengthOrValue - Number of bytes to read (when reading), or `Buffer` to write (when writing)
+   * @returns `Buffer` when reading, or this `Memory` instance when writing
+   *
+   * @example
+   * ```typescript
+   * // Read 16 bytes from memory
+   * const bytes = memory.buffer(0x12345678n, 16);
+   *
+   * // Write a 4-byte patch (NOP sled, for example)
+   * const patch = Buffer.from([0x90, 0x90, 0x90, 0x90]);
+   * memory.buffer(0x12345678n, patch);
+   * ```
+   */
+  public buffer(address: bigint, length: number): Buffer;
+  public buffer(address: bigint, value: Buffer): this;
+  public buffer(address: bigint, lengthOrValue: number | Buffer): Buffer | this {
+    if (typeof lengthOrValue === 'number') {
+      const length = lengthOrValue;
+
+      const scratch = Buffer.allocUnsafe(length);
+
+      this.read(address, scratch);
+
+      return scratch;
+    }
+
+    const value = lengthOrValue;
+
+    this.write(address, value);
+
+    return this;
+  }
+
+  /**
    * Reads a NUL-terminated C string from memory or writes a NUL-terminated C string to memory.
    *
    * When reading, up to `length` bytes are copied into a temporary buffer and a `CString`
