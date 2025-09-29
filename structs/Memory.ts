@@ -261,6 +261,63 @@ class Memory {
   // Core memory operations
 
   /**
+   * Follows a multi-level pointer chain and returns the resolved absolute address.
+   *
+   * This helper walks a sequence of offsets starting at `address`, repeatedly
+   * dereferencing intermediate pointers as 64-bit unsigned integers, and finally
+   * adding the last offset without dereferencing.
+   *
+   * Semantics:
+   * - If `offsets` is empty, the original `address` is returned unchanged.
+   * - For each offset except the last, the method adds the offset to the current
+   *   address and dereferences a `uint64` at that location to get the next base.
+   * - If any intermediate dereference yields `0n`:
+   *   - when `throw_` is `true`, an error is thrown;
+   *   - otherwise, `-1n` is returned to indicate a null chain.
+   * - After all intermediate dereferences succeed, the final offset is **added**
+   *   (no dereference) and the resulting absolute address is returned.
+   *
+   * @param address - Starting absolute memory address (BigInt).
+   * @param offsets - Readonly list of `bigint` offsets that define the pointer path.
+   * @param throw_ - When `true`, throw on a null pointer encounter (default: `false`).
+   * @returns The resolved absolute address, or `-1n` if a null pointer was encountered and `throw_` is `false`.
+   * @throws {Error} When a null pointer is encountered and `throw_` is `true`.
+   *
+   * @example
+   * ```typescript
+   * // Typical multi-level pointer chain (moduleBase + 0x123456 → [0x10, 0x20] → +0x30 final)
+   * const client = memory.modules['client.dll'];
+   * const resolved = memory.follow(client.base, [0x10n, 0x20n, 0x30n]);
+   *
+   * if (resolved !== -1n) {
+   *   const health = memory.f32(resolved);
+   *   console.log('Health:', health);
+   * }
+   * ```
+   */
+  public follow(address: bigint, offsets: readonly bigint[], throw_ = false): bigint {
+    const last = offsets.length - 1;
+
+    if (last === -1) {
+      return address;
+    }
+
+    for (let i = 0; i < last; i++) {
+      address = this.u64((address += offsets[i]));
+
+      if (address === 0n) {
+        if (throw_) {
+          throw new Error('address must not be 0n.');
+        }
+
+        return -1n;
+      }
+    }
+
+    return address + offsets[last];
+  }
+
+  /**
    * Reads data from the target process memory into the provided scratch buffer and returns that
    * same scratch object (strongly typed). This is a low-level, zero-copy helper used internally by
    * typed readers.

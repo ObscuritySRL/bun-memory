@@ -42,18 +42,27 @@ const modules = memory.modules;
 
 const client = modules['client.dll'];
 
-console.log(`Base address: 0x${client.base.toString(16)}`);
-console.log(`Size: ${client.size} bytes`);
+console.log(`Base: 0x%s — Size: %d bytes…`, client.base.toString(16), client.size);
+
+const address = memory.follow(client.base + 0x12345678n, [0x10n, 0x20n, 0x30n]);
 
 // Read a 32-bit integer…
-const value = memory.i32(client.base + 0x12345678n);
+const value = memory.i32(address);
 
 // Write a float…
-memory.f32(client.base + 0x12345678n, 3.14159);
+memory.f32(address, 3.14159);
 
 // Clean up…
 memory.close();
 ```
+
+### API — Follow / Read / Write
+
+Low-level helpers for pointer resolution and raw, allocation-free memory transfers. Use these when you need maximum control or want to reuse your own scratches.
+
+- follow
+- read
+- write
 
 ### API — Typed Reads / Writes
 
