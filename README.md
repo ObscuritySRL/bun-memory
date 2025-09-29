@@ -61,6 +61,7 @@ A `Memory` instance exposes typed helpers for reading and writing process memory
 scalar and array variants; entries without a pair are scalar-only or array-only.
 
 - bool
+- buffer
 - cString
 - f32 / f32Array
 - f64 / f64Array
