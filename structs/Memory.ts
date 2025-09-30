@@ -268,14 +268,12 @@ class Memory {
    * adding the last offset without dereferencing.
    *
    * Semantics:
-   * - If `offsets` is empty, the original `address` is returned unchanged.
-   * - For each offset except the last, the method adds the offset to the current
-   *   address and dereferences a `uint64` at that location to get the next base.
-   * - If any intermediate dereference yields `0n`:
-   *   - when `throw_` is `true`, an error is thrown;
-   *   - otherwise, `-1n` is returned to indicate a null chain.
-   * - After all intermediate dereferences succeed, the final offset is **added**
+   * - After all intermediate dereferences succeed, the final offset is added
    *   (no dereference) and the resulting absolute address is returned.
+   * - For each offset except the last, the method adds the offset to the current address and
+   *   dereferences a `uint64` at that location to get the next base.
+   * - If `offsets` is empty, the original `address` is returned unchanged.
+   * - If any intermediate dereference yields `0n`, `-1n` is returned to indicate a null chain.
    *
    * @param address - Starting absolute memory address (BigInt).
    * @param offsets - Readonly list of `bigint` offsets that define the pointer path.
