@@ -97,6 +97,8 @@ cs2.i32Array(0x12345678n, new Int32Array([1, 2, 3, 4]));
 
 ## Example: Using Scratches (Recommended)
 
+Scratches let you reuse buffers and typed arrays for repeated memory operations, avoiding unnecessary allocations and maximizing performance. This is the most efficient way to read or write large or frequent data.
+
 ```ts
 const buffer = Buffer.allocUnsafe(256);
 const array = new Uint64Array(buffer.buffer, buffer.byteOffset, buffer.byteLength / 8);
