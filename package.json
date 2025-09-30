@@ -3,7 +3,7 @@
   "bugs": {
     "url": "https://github.com/obscuritysrl/bun-memory/issues"
   },
-  "description": "Fast Windows process memory utilities for Bun using bun:ffi.",
+  "description": "Blazing fast, high-performance Windows process memory manipulation for Bun.",
   "devDependencies": {
     "@types/bun": "latest"
   },
@@ -22,7 +22,7 @@
     "url": "git://github.com/obscuritysrl/bun-memory.git"
   },
   "type": "module",
-  "version": "1.1.23",
+  "version": "1.1.24",
   "main": "./index.ts",
   "keywords": [
     "bun",

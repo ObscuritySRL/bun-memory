@@ -1,14 +1,13 @@
-import { CString, FFIType, dlopen, read } from 'bun:ffi';
+import { CString, FFIType, dlopen } from 'bun:ffi';
 
 import type { Module, NetworkUtlVector, Point, QAngle, Quaternion, Region, RGB, RGBA, Scratch, UPtr, UPtrArray, Vector2, Vector3, Vector4 } from '../types/Memory';
 import Win32Error from './Win32Error';
-
-const { f32, f64, i16, i32, i64, i8, u16, u32, u64, u8 } = read;
 
 const { symbols: Kernel32 } = dlopen('kernel32.dll', {
   CloseHandle: { args: [FFIType.u64], returns: FFIType.bool },
   CreateToolhelp32Snapshot: { args: [FFIType.u32, FFIType.u32], returns: FFIType.u64 },
   GetLastError: { returns: FFIType.u32 },
+  IsWow64Process2: { args: [FFIType.u64, FFIType.ptr, FFIType.ptr], returns: FFIType.bool },
   Module32FirstW: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.bool },
   Module32NextW: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.bool },
   OpenProcess: { args: [FFIType.u32, FFIType.bool, FFIType.u32], returns: FFIType.u64 },
@@ -24,6 +23,10 @@ const { symbols: Kernel32 } = dlopen('kernel32.dll', {
  * Provides cross-process memory manipulation for native applications.
  *
  * Use this class to read and write memory, access modules, and work with common data structures in external processes.
+ *
+ * Many scalar reads utilize `TypedArray` scratches to avoid a second FFI hop, such as calling `bun:ffi.read.*`.
+ *
+ * @todo Add support for 32 or 64-bit processes using IsWow64Process2 (Windows 10+).
  *
  * @example
  * ```ts
@@ -87,6 +90,7 @@ class Memory {
       }
 
       this._modules = {};
+
       this.hProcess = hProcess;
       this.th32ProcessID = th32ProcessID;
 
@@ -118,29 +122,38 @@ class Memory {
   private _modules: { [key: string]: Module };
 
   private readonly Scratch1 = new Uint8Array(0x01);
-  private readonly Scratch2 = new Uint8Array(0x02);
-  private readonly Scratch3 = new Uint8Array(0x03);
-  private readonly Scratch4 = new Uint8Array(0x04);
-  private readonly Scratch8 = new Uint8Array(0x08);
-  private readonly Scratch12 = new Uint8Array(0x0c);
-  private readonly Scratch16 = new Uint8Array(0x10);
+  private readonly Scratch1Int8Array = new Int8Array(this.Scratch1.buffer, this.Scratch1.byteOffset, 0x01);
 
-  private readonly Scratch1Buffer = Buffer.from(this.Scratch1.buffer, this.Scratch1.byteOffset, this.Scratch1.byteLength);
-  private readonly Scratch2Buffer = Buffer.from(this.Scratch2.buffer, this.Scratch2.byteOffset, this.Scratch2.byteLength);
-  private readonly Scratch3Buffer = Buffer.from(this.Scratch3.buffer, this.Scratch3.byteOffset, this.Scratch3.byteLength);
-  private readonly Scratch4Buffer = Buffer.from(this.Scratch4.buffer, this.Scratch4.byteOffset, this.Scratch4.byteLength);
-  private readonly Scratch8Buffer = Buffer.from(this.Scratch8.buffer, this.Scratch8.byteOffset, this.Scratch8.byteLength);
-  private readonly Scratch12Buffer = Buffer.from(this.Scratch12.buffer, this.Scratch12.byteOffset, this.Scratch12.byteLength);
-  private readonly Scratch16Buffer = Buffer.from(this.Scratch16.buffer, this.Scratch16.byteOffset, this.Scratch16.byteLength);
+  private readonly Scratch2 = new Uint8Array(0x02);
+  private readonly Scratch2Int16Array = new Int16Array(this.Scratch2.buffer, this.Scratch2.byteOffset, 0x01);
+  private readonly Scratch2Uint16Array = new Uint16Array(this.Scratch2.buffer, this.Scratch2.byteOffset, 0x01);
+
+  private readonly Scratch3 = new Uint8Array(0x03);
+
+  private readonly Scratch4 = new Uint8Array(0x04);
+  private readonly Scratch4Float32Array = new Float32Array(this.Scratch4.buffer, this.Scratch4.byteOffset, 0x01);
+  private readonly Scratch4Int32Array = new Int32Array(this.Scratch4.buffer, this.Scratch4.byteOffset, 0x01);
+  private readonly Scratch4Uint32Array = new Uint32Array(this.Scratch4.buffer, this.Scratch4.byteOffset, 0x01);
+
+  private readonly Scratch8 = new Uint8Array(0x08);
+  private readonly Scratch8BigInt64Array = new BigInt64Array(this.Scratch8.buffer, this.Scratch8.byteOffset, 0x01);
+  private readonly Scratch8BigUint64Array = new BigUint64Array(this.Scratch8.buffer, this.Scratch8.byteOffset, 0x01);
+  private readonly Scratch8Float32Array = new Float32Array(this.Scratch8.buffer, this.Scratch8.byteOffset, 0x02);
+  private readonly Scratch8Float64Array = new Float64Array(this.Scratch8.buffer, this.Scratch8.byteOffset, 0x01);
+
+  private readonly Scratch12 = new Uint8Array(0x0c);
+  private readonly Scratch12Float32Array = new Float32Array(this.Scratch12.buffer, this.Scratch12.byteOffset, 0x03);
+
+  private readonly Scratch16 = new Uint8Array(0x10);
+  private readonly Scratch16Float32Array = new Float32Array(this.Scratch16.buffer, this.Scratch16.byteOffset, 0x04);
 
   private readonly ScratchMemoryBasicInformation = Buffer.allocUnsafe(0x30 /* sizeof(MEMORY_BASIC_INFORMATION) */);
   private readonly ScratchModuleEntry32W = Buffer.allocUnsafe(0x438 /* sizeof(MODULEENTRY32W) */);
 
-  private static readonly TextDecoderUTF16 = new TextDecoder('utf-16');
-  private static readonly TextDecoderUTF8 = new TextDecoder('utf-8');
+  private static TextDecoderUTF16 = new TextDecoder('utf-16');
+  private static TextDecoderUTF8 = new TextDecoder('utf-8');
 
   private readonly hProcess: bigint;
-
   private readonly th32ProcessID: number;
 
   /**
@@ -149,7 +162,7 @@ class Memory {
    * @example
    * ```ts
    * const cs2 = new Memory('cs2.exe');
-   * const modules = cs2.modules;
+   * const client = cs2.modules['client.dll'];
    * ```
    */
   public get modules(): Memory['_modules'] {
@@ -345,15 +358,15 @@ class Memory {
   public bool(address: bigint): boolean;
   public bool(address: bigint, value: boolean): this;
   public bool(address: bigint, value?: boolean): boolean | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch1);
+    const Scratch1 = this.Scratch1;
 
-      return u8(this.Scratch1.ptr) !== 0;
+    if (value === undefined) {
+      return this.read(address, Scratch1)[0x00] !== 0;
     }
 
-    this.Scratch1Buffer.writeUInt8(+value);
+    Scratch1[0x00] = value ? 1 : 0;
 
-    this.write(address, this.Scratch1);
+    this.write(address, Scratch1);
 
     return this;
   }
@@ -375,12 +388,9 @@ class Memory {
   public buffer(address: bigint, lengthOrValue: number | Buffer): Buffer | this {
     if (typeof lengthOrValue === 'number') {
       const length = lengthOrValue;
-
       const scratch = Buffer.allocUnsafe(length);
 
-      this.read(address, scratch);
-
-      return scratch;
+      return this.read(address, scratch);
     }
 
     const value = lengthOrValue;
@@ -435,15 +445,15 @@ class Memory {
   public f32(address: bigint): number;
   public f32(address: bigint, value: number): this;
   public f32(address: bigint, value?: number): number | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch4);
+    const Scratch4Float32Array = this.Scratch4Float32Array; // prettier-ignore
 
-      return f32(this.Scratch4.ptr);
+    if (value === undefined) {
+      return this.read(address, Scratch4Float32Array)[0x00];
     }
 
-    this.Scratch4Buffer.writeFloatLE(value);
+    Scratch4Float32Array[0x00] = value;
 
-    this.write(address, this.Scratch4);
+    this.write(address, Scratch4Float32Array);
 
     return this;
   }
@@ -494,15 +504,15 @@ class Memory {
   public f64(address: bigint): number;
   public f64(address: bigint, value: number): this;
   public f64(address: bigint, value?: number): number | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch8);
+    const Scratch8Float64Array = this.Scratch8Float64Array; // prettier-ignore
 
-      return f64(this.Scratch8.ptr);
+    if (value === undefined) {
+      return this.read(address, Scratch8Float64Array)[0x00];
     }
 
-    this.Scratch8Buffer.writeDoubleLE(value);
+    Scratch8Float64Array[0x00] = value;
 
-    this.write(address, this.Scratch8);
+    this.write(address, Scratch8Float64Array);
 
     return this;
   }
@@ -553,15 +563,15 @@ class Memory {
   public i16(address: bigint): number;
   public i16(address: bigint, value: number): this;
   public i16(address: bigint, value?: number): number | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch2);
+    const Scratch2Int16Array = this.Scratch2Int16Array; // prettier-ignore
 
-      return i16(this.Scratch2.ptr);
+    if (value === undefined) {
+      return this.read(address, Scratch2Int16Array)[0x00];
     }
 
-    this.Scratch2Buffer.writeInt16LE(value);
+    Scratch2Int16Array[0x00] = value;
 
-    this.write(address, this.Scratch2);
+    this.write(address, Scratch2Int16Array);
 
     return this;
   }
@@ -612,15 +622,15 @@ class Memory {
   public i32(address: bigint): number;
   public i32(address: bigint, value: number): this;
   public i32(address: bigint, value?: number): number | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch4);
+    const Scratch4Int32Array = this.Scratch4Int32Array;
 
-      return i32(this.Scratch4.ptr);
+    if (value === undefined) {
+      return this.read(address, Scratch4Int32Array)[0x00];
     }
 
-    this.Scratch4Buffer.writeInt32LE(value);
+    Scratch4Int32Array[0x00] = value;
 
-    this.write(address, this.Scratch4);
+    this.write(address, Scratch4Int32Array);
 
     return this;
   }
@@ -671,15 +681,15 @@ class Memory {
   public i64(address: bigint): bigint;
   public i64(address: bigint, value: bigint): this;
   public i64(address: bigint, value?: bigint): bigint | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch8);
+    const Scratch8BigInt64Array = this.Scratch8BigInt64Array;
 
-      return i64(this.Scratch8.ptr);
+    if (value === undefined) {
+      return this.read(address, Scratch8BigInt64Array)[0x00];
     }
 
-    this.Scratch8Buffer.writeBigInt64LE(value);
+    Scratch8BigInt64Array[0x00] = value;
 
-    this.write(address, this.Scratch8);
+    this.write(address, Scratch8BigInt64Array);
 
     return this;
   }
@@ -730,15 +740,15 @@ class Memory {
   public i8(address: bigint): number;
   public i8(address: bigint, value: number): this;
   public i8(address: bigint, value?: number): number | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch1);
+    const Scratch1Int8Array = this.Scratch1Int8Array;
 
-      return i8(this.Scratch1.ptr);
+    if (value === undefined) {
+      return this.read(address, Scratch1Int8Array)[0x00];
     }
 
-    this.Scratch1Buffer.writeInt8(value);
+    Scratch1Int8Array[0x00] = value;
 
-    this.write(address, this.Scratch1);
+    this.write(address, Scratch1Int8Array);
 
     return this;
   }
@@ -919,19 +929,21 @@ class Memory {
   public point(address: bigint): Point;
   public point(address: bigint, value: Point): this;
   public point(address: bigint, value?: Point): Point | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch8);
+    const Scratch8Float32Array = this.Scratch8Float32Array;
 
-      const x = f32(this.Scratch8.ptr);
-      const y = f32(this.Scratch8.ptr, 0x04);
+    if (value === undefined) {
+      this.read(address, Scratch8Float32Array);
+
+      const x = Scratch8Float32Array[0x00],
+            y = Scratch8Float32Array[0x01]; // prettier-ignore
 
       return { x, y };
     }
 
-    this.Scratch8Buffer.writeFloatLE(value.x);
-    this.Scratch8Buffer.writeFloatLE(value.y, 0x04);
+    Scratch8Float32Array[0x00] = value.x;
+    Scratch8Float32Array[0x01] = value.y;
 
-    this.write(address, this.Scratch8);
+    this.write(address, Scratch8Float32Array);
 
     return this;
   }
@@ -999,21 +1011,23 @@ class Memory {
   public qAngle(address: bigint): QAngle;
   public qAngle(address: bigint, value: QAngle): this;
   public qAngle(address: bigint, value?: QAngle): QAngle | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch12);
+    const Scratch12Float32Array = this.Scratch12Float32Array;
 
-      const pitch = f32(this.Scratch12.ptr);
-      const roll = f32(this.Scratch12.ptr, 0x08);
-      const yaw = f32(this.Scratch12.ptr, 0x04);
+    if (value === undefined) {
+      this.read(address, Scratch12Float32Array);
+
+      const pitch = Scratch12Float32Array[0x00],
+            roll  = Scratch12Float32Array[0x02],
+            yaw   = Scratch12Float32Array[0x01]; // prettier-ignore
 
       return { pitch, roll, yaw };
     }
 
-    this.Scratch12Buffer.writeFloatLE(value.pitch);
-    this.Scratch12Buffer.writeFloatLE(value.roll, 0x08);
-    this.Scratch12Buffer.writeFloatLE(value.yaw, 0x04);
+    Scratch12Float32Array[0x00] = value.pitch;
+    Scratch12Float32Array[0x02] = value.roll;
+    Scratch12Float32Array[0x01] = value.yaw;
 
-    this.write(address, this.Scratch12);
+    this.write(address, Scratch12Float32Array);
 
     return this;
   }
@@ -1082,23 +1096,25 @@ class Memory {
   public quaternion(address: bigint): Quaternion;
   public quaternion(address: bigint, value: Quaternion): this;
   public quaternion(address: bigint, value?: Quaternion): Quaternion | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch16);
+    const Scratch16Float32Array = this.Scratch16Float32Array;
 
-      const w = f32(this.Scratch16.ptr, 0x0c);
-      const x = f32(this.Scratch16.ptr);
-      const y = f32(this.Scratch16.ptr, 0x04);
-      const z = f32(this.Scratch16.ptr, 0x08);
+    if (value === undefined) {
+      this.read(address, Scratch16Float32Array);
+
+      const w = Scratch16Float32Array[0x03],
+            x = Scratch16Float32Array[0x00],
+            y = Scratch16Float32Array[0x01],
+            z = Scratch16Float32Array[0x02]; // prettier-ignore
 
       return { w, x, y, z };
     }
 
-    this.Scratch16Buffer.writeFloatLE(value.w, 0x0c);
-    this.Scratch16Buffer.writeFloatLE(value.x);
-    this.Scratch16Buffer.writeFloatLE(value.y, 0x04);
-    this.Scratch16Buffer.writeFloatLE(value.z, 0x08);
+    Scratch16Float32Array[0x03] = value.w;
+    Scratch16Float32Array[0x00] = value.x;
+    Scratch16Float32Array[0x01] = value.y;
+    Scratch16Float32Array[0x02] = value.z;
 
-    this.write(address, this.Scratch16);
+    this.write(address, Scratch16Float32Array);
 
     return this;
   }
@@ -1170,21 +1186,23 @@ class Memory {
   public rgb(address: bigint): RGB;
   public rgb(address: bigint, value: RGB): this;
   public rgb(address: bigint, value?: RGB): RGB | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch4);
+    const Scratch3 = this.Scratch3;
 
-      const r = this.Scratch3Buffer.readUInt8(),
-            g = this.Scratch3Buffer.readUInt8(0x01),
-            b = this.Scratch3Buffer.readUInt8(0x02); // prettier-ignore
+    if (value === undefined) {
+      this.read(address, Scratch3);
+
+      const r = Scratch3[0x00],
+            g = Scratch3[0x01],
+            b = Scratch3[0x02]; // prettier-ignore
 
       return { r, g, b };
     }
 
-    this.Scratch3Buffer.writeUInt8(value.r);
-    this.Scratch3Buffer.writeUInt8(value.g, 0x01);
-    this.Scratch3Buffer.writeUInt8(value.b, 0x02);
+    Scratch3[0x00] = value.r;
+    Scratch3[0x01] = value.g;
+    Scratch3[0x02] = value.b;
 
-    return this.write(address, this.Scratch4);
+    return this.write(address, Scratch3);
   }
 
   /**
@@ -1202,23 +1220,25 @@ class Memory {
   public rgba(address: bigint): RGBA;
   public rgba(address: bigint, value: RGBA): this;
   public rgba(address: bigint, value?: RGBA): RGBA | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch4);
+    const Scratch4 = this.Scratch4;
 
-      const r = this.Scratch4Buffer.readUInt8(),
-            g = this.Scratch4Buffer.readUInt8(0x01),
-            b = this.Scratch4Buffer.readUInt8(0x02),
-            a = this.Scratch4Buffer.readUInt8(0x03); // prettier-ignore
+    if (value === undefined) {
+      this.read(address, Scratch4);
+
+      const r = Scratch4[0x00],
+            g = Scratch4[0x01],
+            b = Scratch4[0x02],
+            a = Scratch4[0x03]; // prettier-ignore
 
       return { r, g, b, a };
     }
 
-    this.Scratch4Buffer.writeUInt8(value.r);
-    this.Scratch4Buffer.writeUInt8(value.g, 0x01);
-    this.Scratch4Buffer.writeUInt8(value.b, 0x02);
-    this.Scratch4Buffer.writeUInt8(value.a, 0x03);
+    Scratch4[0x00] = value.r;
+    Scratch4[0x01] = value.g;
+    Scratch4[0x02] = value.b;
+    Scratch4[0x03] = value.a;
 
-    return this.write(address, this.Scratch4);
+    return this.write(address, Scratch4);
   }
 
   /**
@@ -1236,15 +1256,15 @@ class Memory {
   public u16(address: bigint): number;
   public u16(address: bigint, value: number): this;
   public u16(address: bigint, value?: number): number | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch2);
+    const Scratch2Uint16Array = this.Scratch2Uint16Array;
 
-      return u16(this.Scratch2.ptr);
+    if (value === undefined) {
+      return this.read(address, Scratch2Uint16Array)[0x00];
     }
 
-    this.Scratch2Buffer.writeUInt16LE(value);
+    Scratch2Uint16Array[0x00] = value;
 
-    this.write(address, this.Scratch2);
+    this.write(address, Scratch2Uint16Array);
 
     return this;
   }
@@ -1295,15 +1315,15 @@ class Memory {
   public u32(address: bigint): number;
   public u32(address: bigint, value: number): this;
   public u32(address: bigint, value?: number): number | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch4);
+    const Scratch4Uint32Array = this.Scratch4Uint32Array;
 
-      return u32(this.Scratch4.ptr);
+    if (value === undefined) {
+      return this.read(address, Scratch4Uint32Array)[0x00];
     }
 
-    this.Scratch4Buffer.writeUInt32LE(value);
+    Scratch4Uint32Array[0x00] = value;
 
-    this.write(address, this.Scratch4);
+    this.write(address, Scratch4Uint32Array);
 
     return this;
   }
@@ -1354,15 +1374,15 @@ class Memory {
   public u64(address: bigint): bigint;
   public u64(address: bigint, value: bigint): this;
   public u64(address: bigint, value?: bigint): bigint | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch8);
+    const Scratch8BigUint64Array = this.Scratch8BigUint64Array;
 
-      return u64(this.Scratch8.ptr);
+    if (value === undefined) {
+      return this.read(address, Scratch8BigUint64Array)[0x00];
     }
 
-    this.Scratch8Buffer.writeBigUInt64LE(value);
+    Scratch8BigUint64Array[0x00] = value;
 
-    this.write(address, this.Scratch8);
+    this.write(address, Scratch8BigUint64Array);
 
     return this;
   }
@@ -1413,15 +1433,15 @@ class Memory {
   public u8(address: bigint): number;
   public u8(address: bigint, value: number): this;
   public u8(address: bigint, value?: number): number | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch1);
+    const Scratch1 = this.Scratch1;
 
-      return u8(this.Scratch1.ptr);
+    if (value === undefined) {
+      return this.read(address, Scratch1)[0x00];
     }
 
-    this.Scratch1Buffer.writeUInt8(value);
+    Scratch1[0x00] = value;
 
-    this.write(address, this.Scratch1);
+    this.write(address, Scratch1);
 
     return this;
   }
@@ -1564,21 +1584,23 @@ class Memory {
   public vector3(address: bigint): Vector3;
   public vector3(address: bigint, value: Vector3): this;
   public vector3(address: bigint, value?: Vector3): Vector3 | this {
-    if (value === undefined) {
-      this.read(address, this.Scratch12);
+    const Scratch12Float32Array = this.Scratch12Float32Array;
 
-      const x = f32(this.Scratch12.ptr);
-      const y = f32(this.Scratch12.ptr, 0x04);
-      const z = f32(this.Scratch12.ptr, 0x08);
+    if (value === undefined) {
+      this.read(address, Scratch12Float32Array);
+
+      const x = Scratch12Float32Array[0x00],
+            y = Scratch12Float32Array[0x01],
+            z = Scratch12Float32Array[0x02]; // prettier-ignore
 
       return { x, y, z };
     }
 
-    this.Scratch12Buffer.writeFloatLE(value.x);
-    this.Scratch12Buffer.writeFloatLE(value.y, 0x04);
-    this.Scratch12Buffer.writeFloatLE(value.z, 0x08);
+    Scratch12Float32Array[0x00] = value.x;
+    Scratch12Float32Array[0x01] = value.y;
+    Scratch12Float32Array[0x02] = value.z;
 
-    this.write(address, this.Scratch12);
+    this.write(address, Scratch12Float32Array);
 
     return this;
   }
