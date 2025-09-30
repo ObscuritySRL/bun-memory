@@ -1716,19 +1716,15 @@ class Memory {
    * ```
    */
   public indexOf(needle: Scratch, address: bigint, length: number): bigint {
-    const haystackUint8Array = new Uint8Array(length);
+    const haystack = Buffer.allocUnsafe(length);
 
-    this.read(address, haystackUint8Array);
+    this.read(address, haystack);
 
-    const haystackBuffer = Buffer.from(haystackUint8Array.buffer, haystackUint8Array.byteOffset, haystackUint8Array.byteLength);
+    const needleBuffer = ArrayBuffer.isView(needle) //
+      ? Buffer.from(needle.buffer, needle.byteOffset, needle.byteLength)
+      : Buffer.from(needle);
 
-    const needleUint8Array = ArrayBuffer.isView(needle) //
-      ? new Uint8Array(needle.buffer, needle.byteOffset, needle.byteLength)
-      : new Uint8Array(needle);
-
-    const needleBuffer = Buffer.from(needleUint8Array.buffer, needleUint8Array.byteOffset, needleUint8Array.byteLength);
-
-    const indexOf = haystackBuffer.indexOf(needleBuffer);
+    const indexOf = haystack.indexOf(needleBuffer);
 
     return indexOf !== -1 ? BigInt(indexOf) + address : -1n;
   }
