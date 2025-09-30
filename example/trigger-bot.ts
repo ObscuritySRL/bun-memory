@@ -9,9 +9,9 @@ import Memory from 'bun-memory';
 import ClientDLLJSON from './offsets/client_dll.json';
 import OffsetsJSON from './offsets/offsets.json';
 
-const Delay = 2.5;
-
 const { random } = Math;
+
+const Delay = 2.5;
 
 // Load user32.dll…
 const {
@@ -28,10 +28,13 @@ const { C_BaseEntity, C_BasePlayerPawn, C_BasePlayerWeapon, C_CSPlayerPawn, C_CS
 };
 
 // Load the needed offsets as bigints…
-const { dwEntityList, dwGlobalVars, dwLocalPlayerController, dwLocalPlayerPawn } = Object.fromEntries(
-  Object.entries(OffsetsJSON['client.dll']).map(([key, value]) => [key, BigInt(value)]) //
+const {
+  'client.dll': { dwEntityList, dwGlobalVars, dwLocalPlayerController, dwLocalPlayerPawn },
+  'engine2.dll': {},
+} = Object.fromEntries(
+  Object.entries(OffsetsJSON).map(([name, section]) => [name, Object.fromEntries(Object.entries(section).map(([key, value]) => [key, BigInt(value as number)]))]) //
 ) as {
-  [K in keyof (typeof OffsetsJSON)['client.dll']]: bigint;
+  [M in keyof typeof OffsetsJSON]: { [K in keyof (typeof OffsetsJSON)[M]]: bigint };
 };
 
 // Open a handle to cs2.exe…
@@ -86,9 +89,7 @@ async function tick(ClientPtr: bigint) {
       return;
     } else if (Local_NextPrimaryAttackTick > Local_TickBase) {
       return;
-    } else if (Local_WeaponType === 0 || Local_WeaponType === 9) {
-      return;
-    } else if (Local_WeaponType === 5 && !(Local_IsScoped && Local_ZoomLevel !== 0)) {
+    } else if (Local_WeaponType === 0 || (Local_WeaponType === 5 && !(Local_IsScoped && Local_ZoomLevel !== 0)) || Local_WeaponType === 7 || Local_WeaponType === 9) {
       return;
     }
 
