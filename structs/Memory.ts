@@ -295,7 +295,7 @@ class Memory {
     const last = offsets.length - 1;
 
     for (let i = 0; i < last; i++) {
-      address = this.u64((address += offsets[i]));
+      address = this.u64(address + offsets[i]);
 
       if (address === 0n) {
         return -1n;
