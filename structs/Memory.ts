@@ -1,9 +1,11 @@
-import { CString, FFIType, dlopen } from 'bun:ffi';
+import { CString, FFIType, dlopen, ptr } from 'bun:ffi';
 
 import type { Module, NetworkUtlVector, Point, QAngle, Quaternion, Region, RGB, RGBA, Scratch, UPtr, UPtrArray, Vector2, Vector3, Vector4 } from '../types/Memory';
 import Win32Error from './Win32Error';
 
-const { symbols: Kernel32 } = dlopen('kernel32.dll', {
+const {
+  symbols: { CloseHandle, CreateToolhelp32Snapshot, GetLastError, Module32FirstW, Module32NextW, OpenProcess, Process32FirstW, Process32NextW, ReadProcessMemory, VirtualQueryEx, WriteProcessMemory },
+} = dlopen('kernel32.dll', {
   CloseHandle: { args: [FFIType.u64], returns: FFIType.bool },
   CreateToolhelp32Snapshot: { args: [FFIType.u32, FFIType.u32], returns: FFIType.u64 },
   GetLastError: { returns: FFIType.u32 },
@@ -27,6 +29,7 @@ const { symbols: Kernel32 } = dlopen('kernel32.dll', {
  * Many scalar reads utilize `TypedArray` scratches to avoid a second FFI hop, such as calling `bun:ffi.read.*`.
  *
  * @todo Add support for 32 or 64-bit processes using IsWow64Process2 (Windows 10+).
+ * @todo When adding 32-bit support, several u64 will need changed to u64_fast.
  *
  * @example
  * ```ts
@@ -50,21 +53,21 @@ class Memory {
     const dwFlags = 0x00000002; /* TH32CS_SNAPPROCESS */
     const th32ProcessID = 0;
 
-    const hSnapshot = Kernel32.CreateToolhelp32Snapshot(dwFlags, th32ProcessID);
+    const hSnapshot = CreateToolhelp32Snapshot(dwFlags, th32ProcessID);
 
     if (hSnapshot === -1n) {
-      throw new Win32Error('CreateToolhelp32Snapshot', Kernel32.GetLastError());
+      throw new Win32Error('CreateToolhelp32Snapshot', GetLastError());
     }
 
     const lppe = Buffer.allocUnsafe(0x238 /* sizeof(PROCESSENTRY32) */);
     /* */ lppe.writeUInt32LE(0x238 /* sizeof(PROCESSENTRY32) */);
 
-    const bProcess32FirstW = Kernel32.Process32FirstW(hSnapshot, lppe);
+    const bProcess32FirstW = Process32FirstW(hSnapshot, lppe);
 
     if (!bProcess32FirstW) {
-      Kernel32.CloseHandle(hSnapshot);
+      CloseHandle(hSnapshot);
 
-      throw new Win32Error('Process32FirstW', Kernel32.GetLastError());
+      throw new Win32Error('Process32FirstW', GetLastError());
     }
 
     do {
@@ -81,12 +84,12 @@ class Memory {
       const desiredAccess = 0x001f0fff; /* PROCESS_ALL_ACCESS */
       const inheritHandle = false;
 
-      const hProcess = Kernel32.OpenProcess(desiredAccess, inheritHandle, th32ProcessID);
+      const hProcess = OpenProcess(desiredAccess, inheritHandle, th32ProcessID);
 
       if (hProcess === 0n) {
-        Kernel32.CloseHandle(hSnapshot);
+        CloseHandle(hSnapshot);
 
-        throw new Win32Error('OpenProcess', Kernel32.GetLastError());
+        throw new Win32Error('OpenProcess', GetLastError());
       }
 
       this._modules = {};
@@ -96,12 +99,12 @@ class Memory {
 
       this.refresh();
 
-      Kernel32.CloseHandle(hSnapshot);
+      CloseHandle(hSnapshot);
 
       return;
-    } while (Kernel32.Process32NextW(hSnapshot, lppe));
+    } while (Process32NextW(hSnapshot, lppe));
 
-    Kernel32.CloseHandle(hSnapshot);
+    CloseHandle(hSnapshot);
 
     throw new Error(`Process not found: ${identifier}…`);
   }
@@ -180,10 +183,10 @@ class Memory {
     let   lpAddress = BigInt(address); // prettier-ignore
     const lpBuffer = this.ScratchMemoryBasicInformation;
 
-    const bVirtualQueryEx = !!Kernel32.VirtualQueryEx(this.hProcess, lpAddress, lpBuffer, dwLength);
+    const bVirtualQueryEx = !!VirtualQueryEx(this.hProcess, lpAddress, lpBuffer, dwLength);
 
     if (!bVirtualQueryEx) {
-      throw new Win32Error('VirtualQueryEx', Kernel32.GetLastError());
+      throw new Win32Error('VirtualQueryEx', GetLastError());
     }
 
     const end = lpAddress + BigInt(length);
@@ -201,9 +204,99 @@ class Memory {
       }
 
       lpAddress = baseAddress + regionSize;
-    } while (lpAddress < end && !!Kernel32.VirtualQueryEx(this.hProcess, lpAddress, lpBuffer, dwLength));
+    } while (lpAddress < end && !!VirtualQueryEx(this.hProcess, lpAddress, lpBuffer, dwLength));
 
     return result;
+  }
+
+  /**
+   * Closes the process handle.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * cs2.close();
+   * ```
+   */
+  public close(): void {
+    CloseHandle(this.hProcess);
+
+    return;
+  }
+
+  /**
+   * Disposes resources held by this Memory instance.
+   * Called automatically when using `using` blocks.
+   * @example
+   * ```ts
+   * using const mem = new Memory('cs2.exe');
+   * // mem is disposed at the end of the block
+   * ```
+   */
+  public [Symbol.dispose](): void {
+    this.close();
+
+    return;
+  }
+
+  /**
+   * Asynchronously disposes resources held by this Memory instance.
+   * Use in `await using` blocks for async cleanup.
+   * @example
+   * ```ts
+   * await using const mem = new Memory('cs2.exe');
+   * // mem is disposed asynchronously at the end of the block
+   * ```
+   */
+  public [Symbol.asyncDispose](): Promise<void> {
+    this.close();
+
+    return Promise.resolve();
+  }
+
+  /**
+   * Refreshes the module list for the process.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * cs2.refresh();
+   * ```
+   */
+  public refresh(): void {
+    const dwFlags = 0x00000008 /* TH32CS_SNAPMODULE */ | 0x00000010; /* TH32CS_SNAPMODULE32 */
+
+    const hSnapshot = CreateToolhelp32Snapshot(dwFlags, this.th32ProcessID)!;
+
+    if (hSnapshot === -1n) {
+      throw new Win32Error('CreateToolhelp32Snapshot', GetLastError());
+    }
+
+    this.ScratchModuleEntry32W.writeUInt32LE(0x438 /* sizeof(MODULEENTRY32W) */);
+
+    const lpme = this.ScratchModuleEntry32W;
+
+    const bModule32FirstW = Module32FirstW(hSnapshot, lpme);
+
+    if (!bModule32FirstW) {
+      CloseHandle(hSnapshot);
+
+      throw new Win32Error('Module32FirstW', GetLastError());
+    }
+
+    const modules: Memory['_modules'] = {};
+
+    do {
+      const modBaseAddr = lpme.readBigUInt64LE(0x18);
+      const modBaseSize = lpme.readUInt32LE(0x20);
+      const szModule = lpme.toString('utf16le', 0x30, 0x230).replace(/\0+$/, '');
+
+      modules[szModule] = Object.freeze({ base: modBaseAddr, name: szModule, size: modBaseSize });
+    } while (Module32NextW(hSnapshot, lpme));
+
+    CloseHandle(hSnapshot);
+
+    this._modules = Object.freeze(modules);
+
+    return;
   }
 
   /**
@@ -236,6 +329,7 @@ class Memory {
    * @param address Address to read from.
    * @param scratch Buffer to fill.
    * @returns The filled buffer.
+   * @todo Consider inlining the call in the if to cut a binding… I hate the idea… 🫠…
    * @example
    * ```ts
    * const cs2 = new Memory('cs2.exe');
@@ -244,14 +338,14 @@ class Memory {
    */
   public read<T extends Scratch>(address: bigint, scratch: T): T {
     const lpBaseAddress = address;
-    const lpBuffer = scratch.ptr;
+    const lpBuffer = ptr(scratch);
     const nSize = scratch.byteLength;
     const numberOfBytesRead = 0x00n;
 
-    const bReadProcessMemory = Kernel32.ReadProcessMemory(this.hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesRead);
+    const bReadProcessMemory = ReadProcessMemory(this.hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesRead);
 
     if (!bReadProcessMemory) {
-      throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      throw new Win32Error('ReadProcessMemory', GetLastError());
     }
 
     return scratch;
@@ -262,6 +356,8 @@ class Memory {
    * @param address Address to write to.
    * @param scratch Buffer to write.
    * @returns This instance.
+   * @todo Add a `force: boolean` option that uses `VirtualProtectEx` for a temporary protection change when set to `true`.
+   * @todo Consider inlining the call in the if to cut a binding… I hate the idea… 🫠…
    * @example
    * ```ts
    * const cs2 = new Memory('cs2.exe');
@@ -274,73 +370,13 @@ class Memory {
     const nSize = scratch.byteLength;
     const numberOfBytesWritten = 0x00n;
 
-    const WriteProcessMemory = Kernel32.WriteProcessMemory(this.hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesWritten);
+    const bWriteProcessMemory = WriteProcessMemory(this.hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesWritten);
 
-    if (!WriteProcessMemory) {
-      throw new Win32Error('WriteProcessMemory', Kernel32.GetLastError());
+    if (!bWriteProcessMemory) {
+      throw new Win32Error('WriteProcessMemory', GetLastError());
     }
 
     return this;
-  }
-
-  /**
-   * Closes the process handle.
-   * @example
-   * ```ts
-   * const cs2 = new Memory('cs2.exe');
-   * cs2.close();
-   * ```
-   */
-  public close(): void {
-    Kernel32.CloseHandle(this.hProcess);
-
-    return;
-  }
-
-  /**
-   * Refreshes the module list for the process.
-   * @example
-   * ```ts
-   * const cs2 = new Memory('cs2.exe');
-   * cs2.refresh();
-   * ```
-   */
-  public refresh(): void {
-    const dwFlags = 0x00000008 /* TH32CS_SNAPMODULE */ | 0x00000010; /* TH32CS_SNAPMODULE32 */
-
-    const hSnapshot = Kernel32.CreateToolhelp32Snapshot(dwFlags, this.th32ProcessID)!;
-
-    if (hSnapshot === -1n) {
-      throw new Win32Error('CreateToolhelp32Snapshot', Kernel32.GetLastError());
-    }
-
-    this.ScratchModuleEntry32W.writeUInt32LE(0x438 /* sizeof(MODULEENTRY32W) */);
-
-    const lpme = this.ScratchModuleEntry32W;
-
-    const bModule32FirstW = Kernel32.Module32FirstW(hSnapshot, lpme);
-
-    if (!bModule32FirstW) {
-      Kernel32.CloseHandle(hSnapshot);
-
-      throw new Win32Error('Module32FirstW', Kernel32.GetLastError());
-    }
-
-    const modules: Memory['_modules'] = {};
-
-    do {
-      const modBaseAddr = lpme.readBigUInt64LE(0x18);
-      const modBaseSize = lpme.readUInt32LE(0x20);
-      const szModule = lpme.toString('utf16le', 0x30, 0x230).replace(/\0+$/, '');
-
-      modules[szModule] = Object.freeze({ base: modBaseAddr, name: szModule, size: modBaseSize });
-    } while (Kernel32.Module32NextW(hSnapshot, lpme));
-
-    Kernel32.CloseHandle(hSnapshot);
-
-    this._modules = Object.freeze(modules);
-
-    return;
   }
 
   /**
@@ -996,6 +1032,22 @@ class Memory {
     return this;
   }
 
+  public pointRaw(address: bigint): Float32Array;
+  public pointRaw(address: bigint, values: Float32Array): this;
+  public pointRaw(address: bigint, values?: Float32Array): Float32Array | this {
+    if (values === undefined) {
+      return this.f32Array(address, 0x02);
+    }
+
+    if (values.length !== 0x02) {
+      throw new RangeError('values.length must be 2.');
+    }
+
+    this.write(address, values);
+
+    return this;
+  }
+
   /**
    * Reads or writes a QAngle (object with pitch, yaw, roll).
    * @param address Address to access.
@@ -1059,6 +1111,7 @@ class Memory {
         const pitch = scratch[j];
         const yaw = scratch[j + 0x01];
         const roll = scratch[j + 0x02];
+
         result[i] = { pitch, yaw, roll };
       }
 
@@ -1077,6 +1130,34 @@ class Memory {
     }
 
     this.write(address, scratch);
+
+    return this;
+  }
+
+  /**
+   * Reads or writes a raw QAngle as a Float32Array.
+   * @param address Address to access.
+   * @param values Optional Float32Array to write.
+   * @returns Float32Array read or this instance if writing.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const raw = cs2.qAngleRaw(0x12345678n);
+   * cs2.qAngleRaw(0x12345678n, new Float32Array([1,2,3]));
+   * ```
+   */
+  public qAngleRaw(address: bigint): Float32Array;
+  public qAngleRaw(address: bigint, values: Float32Array): this;
+  public qAngleRaw(address: bigint, values?: Float32Array): Float32Array | this {
+    if (values === undefined) {
+      return this.f32Array(address, 0x03);
+    }
+
+    if (values.length !== 0x03) {
+      throw new RangeError('values.length must be 3.');
+    }
+
+    this.write(address, values);
 
     return this;
   }
@@ -1172,6 +1253,34 @@ class Memory {
   }
 
   /**
+   * Reads or writes a raw Quaternion as a Float32Array.
+   * @param address Address to access.
+   * @param values Optional Float32Array to write.
+   * @returns Float32Array read or this instance if writing.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const raw = cs2.quaternionRaw(0x12345678n);
+   * cs2.quaternionRaw(0x12345678n, new Float32Array([1,0,0,0]));
+   * ```
+   */
+  public quaternionRaw(address: bigint): Float32Array;
+  public quaternionRaw(address: bigint, values: Float32Array): this;
+  public quaternionRaw(address: bigint, values?: Float32Array): Float32Array | this {
+    if (values === undefined) {
+      return this.f32Array(address, 0x04);
+    }
+
+    if (values.length !== 0x04) {
+      throw new RangeError('values.length must be 4.');
+    }
+
+    this.write(address, values);
+
+    return this;
+  }
+
+  /**
    * Reads or writes an RGB color (object with r, g, b).
    * @param address Address to access.
    * @param value Optional RGB to write.
@@ -1203,6 +1312,34 @@ class Memory {
     Scratch3[0x02] = value.b;
 
     return this.write(address, Scratch3);
+  }
+
+  /**
+   * Reads or writes a raw RGB value as a Uint8Array.
+   * @param address Address to access.
+   * @param values Optional buffer to write.
+   * @returns Uint8Array read or this instance if writing.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const raw = cs2.rgbRaw(0x12345678n);
+   * cs2.rgbRaw(0x12345678n, new Uint8Array([255,0,0]));
+   * ```
+   */
+  public rgbRaw(address: bigint): Uint8Array;
+  public rgbRaw(address: bigint, values: Buffer | Uint8Array | Uint8ClampedArray): this;
+  public rgbRaw(address: bigint, values?: Buffer | Uint8Array | Uint8ClampedArray): Uint8Array | this {
+    if (values === undefined) {
+      return this.u8Array(address, 0x03);
+    }
+
+    if (values.length !== 0x03) {
+      throw new RangeError('values.length must be 3.');
+    }
+
+    this.write(address, values);
+
+    return this;
   }
 
   /**
@@ -1239,6 +1376,34 @@ class Memory {
     Scratch4[0x03] = value.a;
 
     return this.write(address, Scratch4);
+  }
+
+  /**
+   * Reads or writes a raw RGBA value as a Uint8Array.
+   * @param address Address to access.
+   * @param values Optional buffer to write.
+   * @returns Uint8Array read or this instance if writing.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const raw = cs2.rgbaRaw(0x12345678n);
+   * cs2.rgbaRaw(0x12345678n, new Uint8Array([255,0,0,255]));
+   * ```
+   */
+  public rgbaRaw(address: bigint): Uint8Array;
+  public rgbaRaw(address: bigint, values: Buffer | Uint8Array | Uint8ClampedArray): this;
+  public rgbaRaw(address: bigint, values?: Buffer | Uint8Array | Uint8ClampedArray): Uint8Array | this {
+    if (values === undefined) {
+      return this.u8Array(address, 0x04);
+    }
+
+    if (values.length !== 0x04) {
+      throw new RangeError('values.length must be 4.');
+    }
+
+    this.write(address, values);
+
+    return this;
   }
 
   /**
@@ -1569,6 +1734,22 @@ class Memory {
     return this.pointArray(address, lengthOrValues);
   }
 
+  public vector2Raw(address: bigint): Float32Array;
+  public vector2Raw(address: bigint, values: Float32Array): this;
+  public vector2Raw(address: bigint, values?: Float32Array): Float32Array | this {
+    if (values === undefined) {
+      return this.f32Array(address, 0x02);
+    }
+
+    if (values.length !== 0x02) {
+      throw new RangeError('values.length must be 2.');
+    }
+
+    this.write(address, values);
+
+    return this;
+  }
+
   /**
    * Reads or writes a Vector3 (object with x, y, z).
    * @param address Address to access.
@@ -1655,6 +1836,22 @@ class Memory {
     return this;
   }
 
+  public vector3Raw(address: bigint): Float32Array;
+  public vector3Raw(address: bigint, values: Float32Array): this;
+  public vector3Raw(address: bigint, values?: Float32Array): Float32Array | this {
+    if (values === undefined) {
+      return this.f32Array(address, 0x03);
+    }
+
+    if (values.length !== 0x03) {
+      throw new RangeError('values.length must be 3.');
+    }
+
+    this.write(address, values);
+
+    return this;
+  }
+
   /**
    * Reads or writes a Vector4 (object with w, x, y, z).
    * @param address Address to access.
@@ -1699,6 +1896,22 @@ class Memory {
     }
 
     return this.quaternionArray(address, lengthOrValues);
+  }
+
+  public vector4Raw(address: bigint): Float32Array;
+  public vector4Raw(address: bigint, values: Float32Array): this;
+  public vector4Raw(address: bigint, values?: Float32Array): Float32Array | this {
+    if (values === undefined) {
+      return this.f32Array(address, 0x04);
+    }
+
+    if (values.length !== 0x04) {
+      throw new RangeError('values.length must be 4.');
+    }
+
+    this.write(address, values);
+
+    return this;
   }
 
   // Public utility methods…

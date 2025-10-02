@@ -46,5 +46,8 @@
   ],
   "engines": {
     "bun": ">=1.1.0"
+  },
+  "scripts": {
+    "run:benchmark": "bun ./example/benchmark.ts"
   }
 }
