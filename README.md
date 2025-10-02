@@ -27,6 +27,8 @@ bun add bun-memory
 
 ## Quick Start
 
+❗ **Important**: [Example: Using Scratches (Recommended)](#example-using-scratches-recommended).
+
 ```ts
 import Memory from 'bun-memory';
 
@@ -121,7 +123,7 @@ const buffer = Buffer.allocUnsafe(256);
 const array = new Uint64Array(buffer.buffer, buffer.byteOffset, buffer.byteLength / 8);
 
 while (true) {
-  cs2.read(0x10000000n, buffer); // Updates array & buffer without allocations
+  cs2.read(0x10000000n, buffer); // Updates both array & buffer without allocations
   for (const element of array) {
     // …use element…
   }
