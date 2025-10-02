@@ -190,7 +190,7 @@ constructors.forEach(
   ({ prototype }) =>
     !Object.getOwnPropertyDescriptor(prototype, 'ptr') &&
     Object.defineProperty(prototype, 'ptr', {
-      configurable: true,
+      configurable: false,
       enumerable: false,
       /**
        * Returns a native pointer to the underlying memory.
