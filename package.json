@@ -48,6 +48,7 @@
     "bun": ">=1.1.0"
   },
   "scripts": {
-    "run:benchmark": "bun ./example/benchmark.ts"
+    "run:benchmark": "bun ./example/benchmark.ts",
+    "run:trigger-bot": "bun ./example/trigger-bot.ts"
   }
 }
