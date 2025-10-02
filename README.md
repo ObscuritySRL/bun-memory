@@ -9,9 +9,9 @@ Blazing fast, high-performance Windows process memory manipulation for Bun.
 ## Features
 
 - Attach to processes by name or PID
-- Read and write all primitive types, arrays, buffers, and common structures
 - Efficient, allocation-free operations using user-provided buffers (scratches)
 - Module enumeration and pointer chain resolution
+- Read and write all primitive types, arrays, buffers, and common structures
 - Typed helpers for vectors, matrices, colors, and more
 
 ## Requirements
@@ -56,11 +56,17 @@ cs2.close();
 
 See the code and type definitions for full details. All methods are documented with concise examples.
 
-## Example: Efficient Buffer Reuse
+## Example: Efficient Scratch Reuse
 
 ```ts
 const buffer = Buffer.allocUnsafe(256);
 cs2.read(0x12345678n, buffer); // Fills buffer in-place
+// …use buffer…
+```
+
+```ts
+const array = new Float32Array(32);
+cs2.read(0x12345678n, array); // Fills array in-place
 // …use buffer…
 ```
 
@@ -73,15 +79,10 @@ const address = cs2.follow(0x10000000n, [0x10n, 0x20n]);
 ## Example: Searching Memory
 
 ```ts
-const needle = Buffer.from([0x48, 0x8b, 0x05]);
-const address = cs2.indexOf(needle, 0x10000000n, 0x1000);
-if (address !== -1n) {
-  console.log(`Found at 0x${address.toString(16)}`);
-}
-```
-
-```ts
-const needle = new Uint32Array([0x01, 0x02, 0x03]);
+const needle = Buffer.from([0x01, 0x02, 0x03]);
+// const needle = new Uint8Array([0x01, 0x02, 0x03]);
+// const needle = new Uint32Array([0x012345, 0x123456, 0x234567]);
+// …etc…
 const address = cs2.indexOf(needle, 0x10000000n, 0x1000);
 if (address !== -1n) {
   console.log(`Found at 0x${address.toString(16)}`);
@@ -92,12 +93,28 @@ if (address !== -1n) {
 
 ```ts
 const array = cs2.f32Array(0x12345678n, 4); // Float32Array of length 4
+// const array = cs2.u64Array(0x12345678n, 4);
+// const array = cs2.vector3Array(0x12345678n, 4);
+// …etc…
 cs2.i32Array(0x12345678n, new Int32Array([1, 2, 3, 4]));
+cs2.u64Array(0x12345678n, new BigUint64Array([1, 2, 3, 4]));
+cs2.vector3Array(0x12345678n, [{ x: 1, y: 2, z: 3 }]);
 ```
 
 ## Example: Using Scratches (Recommended)
 
 Scratches let you reuse buffers and typed arrays for repeated memory operations, avoiding unnecessary allocations and maximizing performance. This is the most efficient way to read or write large or frequent data.
+
+```ts
+const array = new BigUint64Array(0xf000 / 0x08);
+
+while (true) {
+  cs2.read(0x10000000n, array); // Updates array without allocations
+  for (const element of array) {
+    // …use element…
+  }
+}
+```
 
 ```ts
 const buffer = Buffer.allocUnsafe(256);
