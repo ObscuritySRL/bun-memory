@@ -1,10 +1,10 @@
 # bun-memory
 
-Blazing fast, high-performance Windows process memory manipulation for Bun.
+Blazing fast, high-performance Windows process memory manipulation for [Bun](https://bun.sh/).
 
 ## Overview
 
-`bun-memory` provides fast, allocation-conscious tools for reading and writing memory in external Windows processes. Designed for Bun and Windows 10/11, it exposes a single class, `Memory`, with a clear, type-safe API for all common memory operations.
+`bun-memory` provides fast, allocation-conscious tools for reading and writing memory in external Windows processes. Designed for [Bun](https://bun.sh/) and Windows 10/11, it exposes a single class, `Memory`, with a clear, type-safe API for all common memory operations.
 
 ## Features
 
@@ -17,7 +17,7 @@ Blazing fast, high-performance Windows process memory manipulation for Bun.
 
 ## Requirements
 
-- Bun runtime
+- [Bun](https://bun.sh/) runtime
 - Windows 10 or later
 
 ## Installation
