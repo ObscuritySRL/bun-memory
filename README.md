@@ -151,7 +151,6 @@ while (true) {
 
 ## Notes
 
-- Pattern scanning is temporarily disabled.
 - Windows only. Bun runtime required.
 
 ---
