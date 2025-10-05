@@ -182,7 +182,7 @@ declare global {
 /**
  * Installs the `ptr` property on all supported binary view prototypes.
  *
- * The property is non-enumerable and configurable. The getter calls `ptr(this)`.
+ * The property is non-enumerable and non-configurable. The getter calls `ptr(this)`.
  */
 const constructors = [ArrayBuffer, BigInt64Array, BigUint64Array, Buffer, DataView, Float32Array, Float64Array, Int16Array, Int32Array, Int8Array, SharedArrayBuffer, Uint16Array, Uint32Array, Uint8Array, Uint8ClampedArray] as const;
 
