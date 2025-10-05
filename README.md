@@ -52,6 +52,7 @@ cs2.close();
 ## API Highlights
 
 - `follow(address, offsets)` — Follow a pointer chain
+- `pattern(needle, address, length)` — Find a byte pattern in memory (supports wildcards)
 - `read(address, scratch)` — Read memory into a scratch (no allocations)
 - `write(address, scratch)` — Write a scratch to memory
 - Module map: `memory.modules['client.dll']`
