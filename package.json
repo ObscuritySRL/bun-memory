@@ -22,7 +22,7 @@
     "url": "git://github.com/obscuritysrl/bun-memory.git"
   },
   "type": "module",
-  "version": "1.1.31",
+  "version": "1.1.32",
   "main": "./index.ts",
   "keywords": [
     "bun",
