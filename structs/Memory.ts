@@ -109,9 +109,22 @@ class Memory {
     throw new Error(`Process not found: ${identifier}…`);
   }
 
+  /**
+   * Memory protection flags for safe and unsafe regions.
+   * Used to filter readable/writable memory areas.
+   */
   private static readonly MemoryProtections = {
     Safe: 0x10 /* PAGE_EXECUTE */ | 0x20 /* PAGE_EXECUTE_READ */ | 0x40 /* PAGE_EXECUTE_READWRITE */ | 0x80 /* PAGE_EXECUTE_WRITECOPY */ | 0x02 /* PAGE_READONLY */ | 0x04 /* PAGE_READWRITE */ | 0x08 /* PAGE_WRITECOPY */,
     Unsafe: 0x100 /* PAGE_GUARD */ | 0x01 /* PAGE_NOACCESS */,
+  };
+
+  /**
+   * Regex patterns for matching hex strings and wildcards in memory scans.
+   * Used by the pattern method.
+   */
+  private static readonly Patterns = {
+    MatchAll: /(?:[0-9A-Fa-f]{2})+/g,
+    Test: /^(?:\*{2}|[0-9A-Fa-f]{2}|\?{2})+$/,
   };
 
   /**
@@ -124,6 +137,10 @@ class Memory {
    */
   private _modules: { [key: string]: Module };
 
+  /**
+   * Scratch buffers and typed views for temporary FFI reads/writes.
+   * Used internally for efficient memory access and conversions.
+   */
   private readonly Scratch1 = new Uint8Array(0x01);
   private readonly Scratch1Int8Array = new Int8Array(this.Scratch1.buffer, this.Scratch1.byteOffset, 0x01);
 
@@ -322,6 +339,75 @@ class Memory {
     }
 
     return address + (offsets[last] ?? 0n);
+  }
+
+  /**
+   * Finds the address of a byte pattern in memory. `**` and `??` match any byte.
+   * @param needle Hex string pattern to search for (e.g., 'deadbeed', 'dead**ef', 'dead??ef').
+   * @param address Start address to search.
+   * @param length Number of bytes to search.
+   * @returns Address of the pattern if found, or -1n.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const addr = cs2.pattern('dead**ef', 0x10000000n, 0x1000);
+   * ```
+   */
+  public pattern(needle: string, address: bigint, length: number): bigint {
+    const test = Memory.Patterns.Test.test(needle);
+
+    if (!test) {
+      return -1n;
+    }
+
+    const tokens = [...needle.matchAll(Memory.Patterns.MatchAll)]
+      .map((match) => ({ buffer: Buffer.from(match[0], 'hex'), index: match.index >>> 1, length: match[0].length >>> 1 })) //
+      .sort(({ length: a }, { length: b }) => b - a);
+
+    if (tokens.length === 0) {
+      return needle.length >>> 1 <= length ? address : -1n;
+    }
+
+    const anchor = tokens.shift()!;
+
+    const haystack = this.buffer(address, length);
+
+    const end = length - (needle.length >>> 1);
+    let   start = haystack.indexOf(anchor.buffer); // prettier-ignore
+
+    if (start === -1) {
+      return -1n;
+    }
+
+    outer: do {
+      const base = start - anchor.index;
+
+      if (base < 0) {
+        continue;
+      } else if (base > end) {
+        return -1n;
+      }
+
+      for (const { buffer, index, length } of tokens) {
+        const sourceEnd = base + index + length,
+          sourceStart = base + index,
+          target = buffer,
+          targetEnd = length,
+          targetStart = 0;
+
+        const compare = haystack.compare(target, targetStart, targetEnd, sourceStart, sourceEnd);
+
+        if (compare !== 0) {
+          continue outer;
+        }
+      }
+
+      return address + BigInt(base);
+
+      // Finish…
+    } while ((start = haystack.indexOf(anchor.buffer, start + 0x01)) !== -1);
+
+    return -1n;
   }
 
   /**
