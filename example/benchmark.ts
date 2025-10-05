@@ -35,13 +35,21 @@ console.log('Warming up…');
 for (let i = 0; i < 1e6; i++) {
   const GlobalVarsPtr = cs2.u64(ClientPtr + Client.Other.dwGlobalVars);
   /* */ const CurTime = cs2.f32(GlobalVarsPtr + 0x30n);
+
+  const lPlayerControllerPtr = cs2.u64(ClientPtr + Client.Other.dwLocalPlayerController);
+
+  const lPlayerPawnPtr = cs2.u64(ClientPtr + Client.Other.dwLocalPlayerPawn);
+  /* */ const lHealth = cs2.u32(lPlayerPawnPtr + Client.C_BaseEntity.m_iHealth);
+  /* */ const lTeamNum = cs2.u8(lPlayerPawnPtr + Client.C_BaseEntity.m_iTeamNum);
 }
 
 // Create caches and scratches to optimize performance…
-const Cache_Names = new Map<bigint, string>();
+const BaseEntityPtrs = new Map<string, bigint[]>();
 
 const EntityChunkScratch = new BigUint64Array(0xf000 / 0x08);
 const EntityListScratch = new BigUint64Array(0x200 / 0x08);
+
+const EntityClassInfoNames = new Map<bigint, string>();
 
 // Start the test…
 console.log('Starting the test…');
@@ -51,53 +59,64 @@ const performance1 = performance.now();
 const EntityListPtr = cs2.u64(ClientPtr + Client.Other.dwEntityList);
 
 for (let i = 0; i < 1e6; i++) {
-  const EntityClassInfoNames = new Map<string, bigint[]>();
-  const EntityClassInfoPtrs = new Map<bigint, bigint[]>();
+  try {
+    // Traverse the entity list and store it in `BaseEntityPtrs`…
+    cs2.read(EntityListPtr + 0x10n, EntityListScratch);
 
-  // Traverse the entity list…
-  cs2.read(EntityListPtr + 0x10n, EntityListScratch);
+    // Traverse each of the potential 64 entity chunks…
+    for (let i = 0; i < 0x40; i++) {
+      const EntityChunkPtr = EntityListScratch[i];
 
-  for (let i = 0; i < 0x40; i++) {
-    const EntityChunkPtr = EntityListScratch[i];
-
-    if (EntityChunkPtr === 0n) {
-      continue;
-    }
-
-    cs2.read(EntityChunkPtr, EntityChunkScratch);
-
-    for (let j = 0, l = 0; j < 0x200; j++, l += 0x0f) {
-      const BaseEntityPtr = EntityChunkScratch[l];
-
-      if (BaseEntityPtr === 0n) {
+      if (EntityChunkPtr === 0n) {
         continue;
       }
 
-      const EntityClassInfoPtr = EntityChunkScratch[l + 0x01];
+      cs2.read(EntityChunkPtr, EntityChunkScratch);
 
-      let BaseEntityPtrs = EntityClassInfoPtrs.get(EntityClassInfoPtr);
+      // Traverse each of the potential 512 entities within this chunk…
+      // for (let j = 0, l = 0; j < 0x200; j++, l += 0x0f) {
+      for (let l = 0; l < 0x1e00; l += 0x0f) {
+        const BaseEntityPtr = EntityChunkScratch[l];
 
-      if (BaseEntityPtrs === undefined) {
-        BaseEntityPtrs = [];
+        if (BaseEntityPtr === 0n) {
+          continue;
+        }
 
-        EntityClassInfoPtrs.set(EntityClassInfoPtr, BaseEntityPtrs);
+        const EntityClassInfoPtr = EntityChunkScratch[l + 0x01];
+
+        let Name = EntityClassInfoNames.get(EntityClassInfoPtr);
+
+        if (Name === undefined) {
+          const SchemaClassInfoDataPtr = cs2.u64(EntityClassInfoPtr + 0x30n);
+          /* */ const NamePtr = cs2.u64(SchemaClassInfoDataPtr + 0x08n);
+          /*       */ Name = cs2.buffer(NamePtr, 0x20).toString();
+
+          EntityClassInfoNames.set(EntityClassInfoPtr, Name);
+        }
+
+        let BaseEntityPtrs_ = BaseEntityPtrs.get(Name);
+
+        if (BaseEntityPtrs_ === undefined) {
+          BaseEntityPtrs_ = [];
+
+          BaseEntityPtrs.set(Name, BaseEntityPtrs_);
+        }
+
+        BaseEntityPtrs_.push(BaseEntityPtr);
       }
-
-      BaseEntityPtrs.push(BaseEntityPtr);
     }
 
-    for (const [EntityClassInfoPtr, BaseEntityPtrs] of EntityClassInfoPtrs) {
-      let Name = Cache_Names.get(EntityClassInfoPtr);
+    // ! —————————————————————————————————————————————————————————————————————————————————————————————
+    // ! YOUR CODE GOES HERE…
+    // ! —————————————————————————————————————————————————————————————————————————————————————————————
 
-      if (Name === undefined) {
-        const SchemaClassInfoDataPtr = cs2.u64(EntityClassInfoPtr + 0x30n);
-        /* */ const NamePtr = cs2.u64(SchemaClassInfoDataPtr + 0x08n);
-        /*       */ Name = cs2.cString(NamePtr, 0x2a).toString();
-
-        Cache_Names.set(EntityClassInfoPtr, Name);
-      }
-
-      EntityClassInfoNames.set(Name, BaseEntityPtrs);
+    // ! —————————————————————————————————————————————————————————————————————————————————————————————
+    // ! YOUR CODE ENDS HERE…
+    // ! —————————————————————————————————————————————————————————————————————————————————————————————
+  } finally {
+    // Clear the entity list…
+    for (const BaseEntityPtrs_ of BaseEntityPtrs.values()) {
+      BaseEntityPtrs_.length = 0;
     }
   }
 }
