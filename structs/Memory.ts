@@ -124,7 +124,8 @@ class Memory {
    */
   private static readonly Patterns = {
     MatchAll: /(?:[0-9A-Fa-f]{2})+/g,
-    Test: /^(?:\*{2}|[0-9A-Fa-f]{2}|\?{2})+$/,
+    Test: /^(?=.*[0-9A-Fa-f]{2})(?:\*{2}|\?{2}|[0-9A-Fa-f]{2})+$/,
+    // Test: /^(?:\*{2}|[0-9A-Fa-f]{2}|\?{2})+$/,
   };
 
   /**
@@ -314,100 +315,6 @@ class Memory {
     this._modules = Object.freeze(modules);
 
     return;
-  }
-
-  /**
-   * Follows a pointer chain with offsets.
-   * @param address Base address.
-   * @param offsets Array of pointer offsets.
-   * @returns Final address after following the chain, or -1n if any pointer is null.
-   * @example
-   * ```ts
-   * const cs2 = new Memory('cs2.exe');
-   * const myAddress = cs2.follow(0x10000000n, [0x10n, 0x20n]);
-   * ```
-   */
-  public follow(address: bigint, offsets: readonly bigint[]): bigint {
-    const last = offsets.length - 1;
-
-    for (let i = 0; i < last; i++) {
-      address = this.u64(address + offsets[i]);
-
-      if (address === 0n) {
-        return -1n;
-      }
-    }
-
-    return address + (offsets[last] ?? 0n);
-  }
-
-  /**
-   * Finds the address of a byte pattern in memory. `**` and `??` match any byte.
-   * @param needle Hex string pattern to search for (e.g., 'deadbeed', 'dead**ef', 'dead??ef').
-   * @param address Start address to search.
-   * @param length Number of bytes to search.
-   * @returns Address of the pattern if found, or -1n.
-   * @example
-   * ```ts
-   * const cs2 = new Memory('cs2.exe');
-   * const addr = cs2.pattern('dead**ef', 0x10000000n, 0x1000);
-   * ```
-   */
-  public pattern(needle: string, address: bigint, length: number): bigint {
-    const test = Memory.Patterns.Test.test(needle);
-
-    if (!test) {
-      return -1n;
-    }
-
-    const tokens = [...needle.matchAll(Memory.Patterns.MatchAll)]
-      .map((match) => ({ buffer: Buffer.from(match[0], 'hex'), index: match.index >>> 1, length: match[0].length >>> 1 })) //
-      .sort(({ length: a }, { length: b }) => b - a);
-
-    if (tokens.length === 0) {
-      return needle.length >>> 1 <= length ? address : -1n;
-    }
-
-    const anchor = tokens.shift()!;
-
-    const haystack = this.buffer(address, length);
-
-    const end = length - (needle.length >>> 1);
-    let   start = haystack.indexOf(anchor.buffer); // prettier-ignore
-
-    if (start === -1) {
-      return -1n;
-    }
-
-    outer: do {
-      const base = start - anchor.index;
-
-      if (base < 0) {
-        continue;
-      } else if (base > end) {
-        return -1n;
-      }
-
-      for (const { buffer, index, length } of tokens) {
-        const sourceEnd = base + index + length,
-          sourceStart = base + index,
-          target = buffer,
-          targetEnd = length,
-          targetStart = 0;
-
-        const compare = haystack.compare(target, targetStart, targetEnd, sourceStart, sourceEnd);
-
-        if (compare !== 0) {
-          continue outer;
-        }
-      }
-
-      return address + BigInt(base);
-
-      // Finish…
-    } while ((start = haystack.indexOf(anchor.buffer, start + 0x01)) !== -1);
-
-    return -1n;
   }
 
   /**
@@ -2003,29 +1910,189 @@ class Memory {
   // Public utility methods…
 
   /**
-   * Finds the address of a buffer within a memory region.
-   * @param needle Buffer to search for.
-   * @param address Start address.
-   * @param length Number of bytes to search.
-   * @returns Address of the buffer if found, or -1n.
+   * Follows a pointer chain with offsets.
+   * @param address Base address.
+   * @param offsets Array of pointer offsets.
+   * @returns Final address after following the chain, or -1n if any pointer is null.
    * @example
    * ```ts
    * const cs2 = new Memory('cs2.exe');
-   * const myAddress = cs2.indexOf(new Uint8Array([1,2,3]), 0x10000000n, 100);
+   * const myAddress = cs2.follow(0x10000000n, [0x10n, 0x20n]);
    * ```
    */
-  public indexOf(needle: Scratch, address: bigint, length: number): bigint {
-    const haystack = Buffer.allocUnsafe(length);
+  public follow(address: bigint, offsets: readonly bigint[]): bigint {
+    const last = offsets.length - 1;
 
-    this.read(address, haystack);
+    for (let i = 0; i < last; i++) {
+      address = this.u64(address + offsets[i]);
+
+      if (address === 0n) {
+        return -1n;
+      }
+    }
+
+    return address + (offsets[last] ?? 0n);
+  }
+
+  /**
+   * Finds the address of a buffer within a memory region.
+   * @param needle Buffer or typed array to search for.
+   * @param address Start address.
+   * @param length Number of bytes to search.
+   * @param all If true, returns all matches as an array. If false or omitted, returns the first match or -1n.
+   * @returns Address of the buffer if found, or -1n. If all is true, returns an array of addresses.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const needle = Buffer.from('Hello world!');
+   * // const needle = Buffer.from([0x01, 0x02, 0x03]);
+   * // const needle = new Uint8Array([0x01, 0x02, 0x03]);
+   * // const needle = new Float32Array([0x01, 0x02, 0x03]);
+   * // Find first match
+   * const address = cs2.indexOf(needle, 0x10000000n, 100);
+   * // Find all matches
+   * const allAddressess = cs2.indexOf(needle, 0x10000000n, 100, true);
+   * ```
+   */
+  public indexOf(needle: Scratch, address: bigint, length: number): bigint;
+  public indexOf(needle: Scratch, address: bigint, length: number, all: false): bigint;
+  public indexOf(needle: Scratch, address: bigint, length: number, all: true): bigint[];
+  public indexOf(needle: Scratch, address: bigint, length: number, all: boolean = false): bigint | bigint[] {
+    const haystack = Buffer.allocUnsafe(length);
 
     const needleBuffer = ArrayBuffer.isView(needle) //
       ? Buffer.from(needle.buffer, needle.byteOffset, needle.byteLength)
       : Buffer.from(needle);
 
-    const indexOf = haystack.indexOf(needleBuffer);
+    this.read(address, haystack);
 
-    return indexOf !== -1 ? BigInt(indexOf) + address : -1n;
+    if (!all) {
+      const indexOf = haystack.indexOf(needleBuffer);
+
+      return indexOf !== -1 ? BigInt(indexOf) + address : -1n;
+    }
+
+    const results: bigint[] = [];
+
+    let start = haystack.indexOf(needleBuffer);
+
+    if (start === -1) {
+      return results;
+    }
+
+    do {
+      results.push(address + BigInt(start));
+    } while ((start = haystack.indexOf(needleBuffer, start + 0x01)) !== -1);
+
+    return results;
+  }
+
+  /**
+   * Finds the address of a byte pattern in memory. `**` and `??` match any byte.
+   * @param needle Hex string pattern to search for (e.g., 'deadbeed', 'dead**ef', 'dead??ef').
+   * @param address Start address to search.
+   * @param length Number of bytes to search.
+   * @param all If true, returns all matches as an array. If false or omitted, returns the first match or -1n.
+   * @returns Address of the pattern if found, or -1n. If all is true, returns an array of addresses.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * // Find first match
+   * const address = cs2.pattern('dead**ef', 0x10000000n, 0x1000);
+   * // Find all matches
+   * const allAddresses = cs2.pattern('dead**ef', 0x10000000n, 0x1000, true);
+   * ```
+   */
+  public pattern(needle: string, address: bigint, length: number): bigint;
+  public pattern(needle: string, address: bigint, length: number, all: false): bigint;
+  public pattern(needle: string, address: bigint, length: number, all: true): bigint[];
+  public pattern(needle: string, address: bigint, length: number, all: boolean = false): bigint | bigint[] {
+    const test = Memory.Patterns.Test.test(needle);
+
+    if (!test) {
+      return !all ? -1n : [];
+    }
+
+    // The RegExp test ensures that we have at least one token…
+
+    const tokens = [...needle.matchAll(Memory.Patterns.MatchAll)]
+      .map((match) => ({ buffer: Buffer.from(match[0], 'hex'), index: match.index >>> 1, length: match[0].length >>> 1 })) //
+      .sort(({ length: a }, { length: b }) => b - a);
+
+    const anchor = tokens.shift()!;
+
+    const haystack = this.buffer(address, length);
+
+    const end = length - (needle.length >>> 1);
+    let   start = haystack.indexOf(anchor.buffer); // prettier-ignore
+
+    if (start === -1) {
+      return !all ? -1n : [];
+    }
+
+    if (!all) {
+      outer: do {
+        const base = start - anchor.index;
+
+        if (base < 0) {
+          continue;
+        }
+
+        if (base > end) {
+          return -1n;
+        }
+
+        for (const { buffer, index, length } of tokens) {
+          const sourceEnd = base + index + length,
+                sourceStart = base + index,
+                target = buffer,
+                targetEnd = length,
+                targetStart = 0; // prettier-ignore
+
+          const compare = haystack.compare(target, targetStart, targetEnd, sourceStart, sourceEnd);
+
+          if (compare !== 0) {
+            continue outer;
+          }
+        }
+
+        return address + BigInt(base);
+      } while ((start = haystack.indexOf(anchor.buffer, start + 0x01)) !== -1);
+
+      return -1n;
+    }
+
+    const results: bigint[] = [];
+
+    outer: do {
+      const base = start - anchor.index;
+
+      if (base < 0) {
+        continue;
+      }
+
+      if (base > end) {
+        return results;
+      }
+
+      for (const { buffer, index, length } of tokens) {
+        const sourceEnd = base + index + length,
+              sourceStart = base + index,
+              target = buffer,
+              targetEnd = length,
+              targetStart = 0; // prettier-ignore
+
+        const compare = haystack.compare(target, targetStart, targetEnd, sourceStart, sourceEnd);
+
+        if (compare !== 0) {
+          continue outer;
+        }
+      }
+
+      results.push(address + BigInt(base));
+    } while ((start = haystack.indexOf(anchor.buffer, start + 0x01)) !== -1);
+
+    return results;
   }
 }
 

@@ -52,7 +52,8 @@ cs2.close();
 ## API Highlights
 
 - `follow(address, offsets)` — Follow a pointer chain
-- `pattern(needle, address, length)` — Find a byte pattern in memory (supports wildcards)
+- `indexOf(needle, address, length, [all])` — Search for a buffer or array in memory (returns all matches if all=true)
+- `pattern(needle, address, length, [all])` — Find a byte pattern in memory (supports wildcards, returns all matches if all=true)
 - `read(address, scratch)` — Read memory into a scratch (no allocations)
 - `write(address, scratch)` — Write a scratch to memory
 - Module map: `memory.modules['client.dll']`
@@ -83,9 +84,15 @@ void cs2.read(0x12345678n, array); // Fills array in-place
 const needle = 'deadbeef';
 // const needle = 'de**beef';
 // const needle = 'de????ef';
+// Find first match
 const address = cs2.pattern(needle, 0x10000000n, 0x1000);
 if (address !== -1n) {
   console.log(`Found at 0x${address.toString(16)}`);
+}
+// Find all matches
+const allAddresses = cs2.pattern(needle, 0x10000000n, 0x1000, true);
+for (const addr of allAddresses) {
+  console.log(`Found at 0x${addr.toString(16)}`);
 }
 ```
 
@@ -103,10 +110,15 @@ const address = cs2.follow(0x10000000n, [0x10n, 0x20n]);
 const needle = Buffer.from([0x01, 0x02, 0x03]);
 // const needle = new Uint8Array([0x01, 0x02, 0x03]);
 // const needle = new Uint32Array([0x012345, 0x123456, 0x234567]);
-// …etc…
+// Find first match
 const address = cs2.indexOf(needle, 0x10000000n, 0x1000);
 if (address !== -1n) {
   console.log(`Found at 0x${address.toString(16)}`);
+}
+// Find all matches
+const allAddresses = cs2.indexOf(needle, 0x10000000n, 0x1000, true);
+for (const addr of allAddresses) {
+  console.log(`Found at 0x${addr.toString(16)}`);
 }
 ```
 
@@ -117,7 +129,6 @@ if (address !== -1n) {
 const array = cs2.f32Array(0x12345678n, 4); // Float32Array of length 4
 // const array = cs2.u64Array(0x12345678n, 4);
 // const array = cs2.vector3Array(0x12345678n, 4);
-// …etc…
 cs2.i32Array(0x12345678n, new Int32Array([1, 2, 3, 4]));
 cs2.u64Array(0x12345678n, new BigUint64Array([1, 2, 3, 4]));
 cs2.vector3Array(0x12345678n, [{ x: 1, y: 2, z: 3 }]);
