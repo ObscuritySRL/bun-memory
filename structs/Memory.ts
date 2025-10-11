@@ -7,7 +7,10 @@ const {
   symbols: { CloseHandle, CreateToolhelp32Snapshot, GetLastError, Module32FirstW, Module32NextW, OpenProcess, Process32FirstW, Process32NextW, ReadProcessMemory, VirtualQueryEx, WriteProcessMemory },
 } = dlopen('kernel32.dll', {
   CloseHandle: { args: [FFIType.u64], returns: FFIType.bool },
+  CreateRemoteThread: { args: [FFIType.u64, FFIType.u64, FFIType.u64, FFIType.u64, FFIType.u64, FFIType.u32, FFIType.ptr], returns: FFIType.u64 },
   CreateToolhelp32Snapshot: { args: [FFIType.u32, FFIType.u32], returns: FFIType.u64 },
+  GetCurrentProcess: { args: [], returns: FFIType.ptr },
+  GetExitCodeThread: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.bool },
   GetLastError: { returns: FFIType.u32 },
   IsWow64Process2: { args: [FFIType.u64, FFIType.ptr, FFIType.ptr], returns: FFIType.bool },
   Module32FirstW: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.bool },
@@ -16,8 +19,11 @@ const {
   Process32FirstW: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.bool },
   Process32NextW: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.bool },
   ReadProcessMemory: { args: [FFIType.u64, FFIType.u64, FFIType.ptr, FFIType.u64_fast, FFIType.ptr], returns: FFIType.bool },
+  VirtualAllocEx: { args: [FFIType.u64, FFIType.u64, FFIType.u64, FFIType.u32, FFIType.u32], returns: FFIType.u64 },
+  VirtualFreeEx: { args: [FFIType.u64, FFIType.u64, FFIType.u64, FFIType.u32], returns: FFIType.bool },
   VirtualProtectEx: { args: [FFIType.u64, FFIType.u64, FFIType.u64, FFIType.u32, FFIType.ptr], returns: FFIType.bool },
   VirtualQueryEx: { args: [FFIType.u64, FFIType.u64, FFIType.ptr, FFIType.u64], returns: FFIType.u64 },
+  WaitForSingleObject: { args: [FFIType.u64, FFIType.u32], returns: FFIType.u32 },
   WriteProcessMemory: { args: [FFIType.u64, FFIType.u64, FFIType.ptr, FFIType.u64_fast, FFIType.ptr], returns: FFIType.bool },
 });
 
@@ -28,6 +34,7 @@ const {
  *
  * Many scalar reads utilize `TypedArray` scratches to avoid a second FFI hop, such as calling `bun:ffi.read.*`.
  *
+ * @todo Add call method for calling functions in remote process.
  * @todo Add support for 32 or 64-bit processes using IsWow64Process2 (Windows 10+).
  * @todo When adding 32-bit support, several u64 will need changed to u64_fast.
  *
@@ -109,6 +116,8 @@ class Memory {
     throw new Error(`Process not found: ${identifier}…`);
   }
 
+  // public call(address: bigint, args: { type: FFIType, value: any }[] = [], timeout: number = 5_000): bigint {}
+
   /**
    * Memory protection flags for safe and unsafe regions.
    * Used to filter readable/writable memory areas.
@@ -171,8 +180,9 @@ class Memory {
   private readonly ScratchMemoryBasicInformation = Buffer.allocUnsafe(0x30 /* sizeof(MEMORY_BASIC_INFORMATION) */);
   private readonly ScratchModuleEntry32W = Buffer.allocUnsafe(0x438 /* sizeof(MODULEENTRY32W) */);
 
-  private static TextDecoderUTF16 = new TextDecoder('utf-16');
   private static TextDecoderUTF8 = new TextDecoder('utf-8');
+
+  private static TextEncoderUTF8 = new TextEncoder('utf-8');
 
   private readonly hProcess: bigint;
   private readonly th32ProcessID: number;
@@ -188,43 +198,6 @@ class Memory {
    */
   public get modules(): Memory['_modules'] {
     return this._modules;
-  }
-
-  /**
-   * Returns memory regions in a given address range.
-   * @param address Start address.
-   * @param length Number of bytes to scan.
-   * @returns Array of memory regions.
-   */
-  private regions(address: bigint, length: bigint | number): Region[] {
-    const dwLength = 0x30; /* sizeof(MEMORY_BASIC_INFORMATION) */
-    let   lpAddress = BigInt(address); // prettier-ignore
-    const lpBuffer = this.ScratchMemoryBasicInformation;
-
-    const bVirtualQueryEx = !!VirtualQueryEx(this.hProcess, lpAddress, lpBuffer, dwLength);
-
-    if (!bVirtualQueryEx) {
-      throw new Win32Error('VirtualQueryEx', GetLastError());
-    }
-
-    const end = lpAddress + BigInt(length);
-    const result: Region[] = [];
-
-    do {
-      const baseAddress = lpBuffer.readBigUInt64LE();
-      const protect = lpBuffer.readUInt32LE(36);
-      const regionSize = lpBuffer.readBigUInt64LE(24);
-      const state = lpBuffer.readUInt32LE(32);
-      const type = lpBuffer.readUInt32LE(40);
-
-      if ((protect & Memory.MemoryProtections.Safe) !== 0 && (protect & Memory.MemoryProtections.Unsafe) === 0 && state === 0x1000 /* MEM_COMMIT */) {
-        result.push({ base: baseAddress, protect, size: regionSize, state, type });
-      }
-
-      lpAddress = baseAddress + regionSize;
-    } while (lpAddress < end && !!VirtualQueryEx(this.hProcess, lpAddress, lpBuffer, dwLength));
-
-    return result;
   }
 
   /**
@@ -447,7 +420,13 @@ class Memory {
     if (typeof lengthOrValue === 'number') {
       const scratch = new Uint8Array(lengthOrValue);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
+
+      const indexOf = scratch.indexOf(0x00);
+
+      if (indexOf === -1) {
+        scratch[lengthOrValue - 1] = 0x00;
+      }
 
       return new CString(scratch.ptr);
     }
@@ -506,7 +485,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Float32Array(length);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       return scratch;
     }
@@ -565,7 +544,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Float64Array(length);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       return scratch;
     }
@@ -624,7 +603,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Int16Array(length);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       return scratch;
     }
@@ -683,7 +662,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Int32Array(length);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       return scratch;
     }
@@ -742,7 +721,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new BigInt64Array(length);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       return scratch;
     }
@@ -801,7 +780,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Int8Array(length);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       return scratch;
     }
@@ -831,7 +810,7 @@ class Memory {
     if (values === undefined) {
       const scratch = new Float32Array(0x09);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       return scratch;
     }
@@ -863,7 +842,7 @@ class Memory {
     if (values === undefined) {
       const scratch = new Float32Array(0x0c);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       return scratch;
     }
@@ -895,7 +874,7 @@ class Memory {
     if (values === undefined) {
       const scratch = new Float32Array(0x10);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       return scratch;
     }
@@ -931,7 +910,7 @@ class Memory {
 
       const scratch = new Uint32Array(size);
 
-      this.read(elementsPtr, scratch);
+      void this.read(elementsPtr, scratch);
 
       return scratch;
     }
@@ -961,7 +940,7 @@ class Memory {
     const Scratch8Float32Array = this.Scratch8Float32Array;
 
     if (value === undefined) {
-      this.read(address, Scratch8Float32Array);
+      void this.read(address, Scratch8Float32Array);
 
       const x = Scratch8Float32Array[0x00],
             y = Scratch8Float32Array[0x01]; // prettier-ignore
@@ -996,7 +975,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Float32Array(length * 2);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       const result = new Array<Vector2>(length);
 
@@ -1059,7 +1038,7 @@ class Memory {
     const Scratch12Float32Array = this.Scratch12Float32Array;
 
     if (value === undefined) {
-      this.read(address, Scratch12Float32Array);
+      void this.read(address, Scratch12Float32Array);
 
       const pitch = Scratch12Float32Array[0x00],
             roll  = Scratch12Float32Array[0x02],
@@ -1096,7 +1075,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Float32Array(length * 0x03);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       const result = new Array<QAngle>(length);
 
@@ -1173,7 +1152,7 @@ class Memory {
     const Scratch16Float32Array = this.Scratch16Float32Array;
 
     if (value === undefined) {
-      this.read(address, Scratch16Float32Array);
+      void this.read(address, Scratch16Float32Array);
 
       const w = Scratch16Float32Array[0x03],
             x = Scratch16Float32Array[0x00],
@@ -1212,7 +1191,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Float32Array(length * 0x04); // 4 * f32 per Quaternion
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       const result = new Array<Quaternion>(length);
 
@@ -1291,7 +1270,7 @@ class Memory {
     const Scratch3 = this.Scratch3;
 
     if (value === undefined) {
-      this.read(address, Scratch3);
+      void this.read(address, Scratch3);
 
       const r = Scratch3[0x00],
             g = Scratch3[0x01],
@@ -1353,7 +1332,7 @@ class Memory {
     const Scratch4 = this.Scratch4;
 
     if (value === undefined) {
-      this.read(address, Scratch4);
+      void this.read(address, Scratch4);
 
       const r = Scratch4[0x00],
             g = Scratch4[0x01],
@@ -1395,6 +1374,43 @@ class Memory {
     }
 
     this.write(address, values);
+
+    return this;
+  }
+
+  /**
+   * Reads or writes a UTF-8 string.
+   * @param address Address to access.
+   * @param lengthOrValue Length to read or string to write.
+   * @returns The string at address, or this instance if writing.
+   * @notice When writing, remember to null-terminate your string (e.g., 'hello\0').
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const myString = cs2.string(0x12345678n, 16);
+   * cs2.string(0x12345678n, 'hello\0');
+   * ```
+   */
+  public string(address: bigint, length: number): string;
+  public string(address: bigint, value: string): this;
+  public string(address: bigint, lengthOrValue: number | string): string | this {
+    if (typeof lengthOrValue === 'number') {
+      const scratch = new Uint8Array(lengthOrValue);
+
+      void this.read(address, scratch);
+
+      const indexOf = scratch.indexOf(0x00);
+
+      return Memory.TextDecoderUTF8.decode(
+        scratch.subarray(0, indexOf !== -1 ? indexOf : lengthOrValue) //
+      );
+
+      // return new CString(scratch.ptr).valueOf();
+    }
+
+    const scratch = Memory.TextEncoderUTF8.encode(lengthOrValue);
+
+    this.write(address, scratch);
 
     return this;
   }
@@ -1446,7 +1462,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Uint16Array(length);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       return scratch;
     }
@@ -1505,7 +1521,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Uint32Array(length);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       return scratch;
     }
@@ -1564,7 +1580,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new BigUint64Array(length);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       return scratch;
     }
@@ -1623,7 +1639,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Uint8Array(length);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       return scratch;
     }
@@ -1761,7 +1777,7 @@ class Memory {
     const Scratch12Float32Array = this.Scratch12Float32Array;
 
     if (value === undefined) {
-      this.read(address, Scratch12Float32Array);
+      void this.read(address, Scratch12Float32Array);
 
       const x = Scratch12Float32Array[0x00],
             y = Scratch12Float32Array[0x01],
@@ -1798,7 +1814,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Float32Array(length * 0x03);
 
-      this.read(address, scratch);
+      void this.read(address, scratch);
 
       const result = new Array<Vector3>(length);
 
@@ -1964,7 +1980,7 @@ class Memory {
       ? Buffer.from(needle.buffer, needle.byteOffset, needle.byteLength)
       : Buffer.from(needle);
 
-    this.read(address, haystack);
+    void this.read(address, haystack);
 
     if (!all) {
       const indexOf = haystack.indexOf(needleBuffer);
