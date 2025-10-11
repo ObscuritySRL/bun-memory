@@ -10,6 +10,8 @@ import Memory from 'bun-memory';
 import ClientDLLJSON from './offsets/client_dll.json';
 import OffsetsJSON from './offsets/offsets.json';
 
+const Iterations = 1e6;
+
 // Load the needed offsets as bigints… It's ugly but… IntelliSense! 🫠…
 const Client = {
   ...Object.fromEntries(Object.entries(ClientDLLJSON['client.dll'].classes).map(([class_, { fields }]) => [class_, Object.fromEntries(Object.entries(fields).map(([field, value]) => [field, BigInt(value)]))])),
@@ -32,11 +34,12 @@ if (ClientPtr === undefined) {
 // Warmup…
 console.log('Warming up…');
 
-for (let i = 0; i < 1e6; i++) {
+for (let i = 0; i < Iterations; i++) {
   const GlobalVarsPtr = cs2.u64(ClientPtr + Client.Other.dwGlobalVars);
   /* */ const CurTime = cs2.f32(GlobalVarsPtr + 0x30n);
 
   const lPlayerControllerPtr = cs2.u64(ClientPtr + Client.Other.dwLocalPlayerController);
+  /* */ const lPlayerName = cs2.string(lPlayerControllerPtr + Client.CBasePlayerController.m_iszPlayerName, 32);
 
   const lPlayerPawnPtr = cs2.u64(ClientPtr + Client.Other.dwLocalPlayerPawn);
   /* */ const lHealth = cs2.u32(lPlayerPawnPtr + Client.C_BaseEntity.m_iHealth);
@@ -52,75 +55,92 @@ const EntityListScratch = new BigUint64Array(0x200 / 0x08);
 const EntityClassInfoNames = new Map<bigint, string>();
 
 // Start the test…
-console.log('Starting the test…');
+for (let i = 0; i < 10; i++) {
+  console.log('Starting the test…');
 
-const performance1 = performance.now();
+  const start = performance.now();
 
-const EntityListPtr = cs2.u64(ClientPtr + Client.Other.dwEntityList);
+  const EntityListPtr = cs2.u64(ClientPtr + Client.Other.dwEntityList);
 
-for (let i = 0; i < 1e6; i++) {
-  try {
-    // Traverse the entity list and store it in `BaseEntityPtrs`…
-    cs2.read(EntityListPtr + 0x10n, EntityListScratch);
+  for (let j = 0; j < Iterations; j++) {
+    try {
+      // Traverse the entity list and store it in `BaseEntityPtrs`…
+      void cs2.read(EntityListPtr + 0x10n, EntityListScratch);
 
-    // Traverse each of the potential 64 entity chunks…
-    for (let i = 0; i < 0x40; i++) {
-      const EntityChunkPtr = EntityListScratch[i];
+      // Traverse each of the potential 64 entity chunks…
+      for (let k = 0; k < 0x40; k++) {
+        const EntityChunkPtr = EntityListScratch[k];
 
-      if (EntityChunkPtr === 0n) {
-        continue;
-      }
-
-      cs2.read(EntityChunkPtr, EntityChunkScratch);
-
-      // Traverse each of the potential 512 entities within this chunk…
-      // for (let j = 0, l = 0; j < 0x200; j++, l += 0x0f) {
-      for (let l = 0; l < 0x1e00; l += 0x0f) {
-        const BaseEntityPtr = EntityChunkScratch[l];
-
-        if (BaseEntityPtr === 0n) {
+        if (EntityChunkPtr === 0n) {
           continue;
         }
 
-        const EntityClassInfoPtr = EntityChunkScratch[l + 0x01];
+        void cs2.read(EntityChunkPtr, EntityChunkScratch);
 
-        let Name = EntityClassInfoNames.get(EntityClassInfoPtr);
+        // Traverse each of the potential 512 entities within this chunk…
+        for (let l = 0; l < 0x1e00; l += 0x0f) {
+          const BaseEntityPtr = EntityChunkScratch[l];
 
-        if (Name === undefined) {
-          const SchemaClassInfoDataPtr = cs2.u64(EntityClassInfoPtr + 0x30n);
-          /* */ const NamePtr = cs2.u64(SchemaClassInfoDataPtr + 0x08n);
-          /*       */ Name = cs2.buffer(NamePtr, 0x20).toString();
+          if (BaseEntityPtr === 0n) {
+            continue;
+          }
 
-          EntityClassInfoNames.set(EntityClassInfoPtr, Name);
+          const EntityClassInfoPtr = EntityChunkScratch[l + 0x01];
+
+          let Name = EntityClassInfoNames.get(EntityClassInfoPtr);
+
+          if (Name === undefined) {
+            const SchemaClassInfoDataPtr = cs2.u64(EntityClassInfoPtr + 0x30n);
+            /* */ const NamePtr = cs2.u64(SchemaClassInfoDataPtr + 0x08n);
+            // /*       */ Name = cs2.buffer(NamePtr, 0x20).toString();
+            /*       */ Name = cs2.string(NamePtr, 0x40);
+
+            EntityClassInfoNames.set(EntityClassInfoPtr, Name);
+          }
+
+          let BaseEntityPtrs_ = BaseEntityPtrs.get(Name);
+
+          if (BaseEntityPtrs_ === undefined) {
+            BaseEntityPtrs_ = [];
+
+            BaseEntityPtrs.set(Name, BaseEntityPtrs_);
+          }
+
+          BaseEntityPtrs_.push(BaseEntityPtr);
         }
+      }
 
-        let BaseEntityPtrs_ = BaseEntityPtrs.get(Name);
+      // ! —————————————————————————————————————————————————————————————————————————————————————————————
+      // ! YOUR CODE GOES HERE…
+      // ! —————————————————————————————————————————————————————————————————————————————————————————————
 
-        if (BaseEntityPtrs_ === undefined) {
-          BaseEntityPtrs_ = [];
+      // // Log our entities…
+      // console.log(
+      //   'Entities found this tick: %O',
+      //   Object.fromEntries([...BaseEntityPtrs.entries()].map(([Name, { length }]) => [Name, length])) //
+      // );
 
-          BaseEntityPtrs.set(Name, BaseEntityPtrs_);
-        }
-
-        BaseEntityPtrs_.push(BaseEntityPtr);
+      // ! —————————————————————————————————————————————————————————————————————————————————————————————
+      // ! YOUR CODE ENDS HERE…
+      // ! —————————————————————————————————————————————————————————————————————————————————————————————
+    } finally {
+      // Clear the entity list…
+      for (const BaseEntityPtrs_ of BaseEntityPtrs.values()) {
+        BaseEntityPtrs_.length = 0;
       }
     }
-
-    // ! —————————————————————————————————————————————————————————————————————————————————————————————
-    // ! YOUR CODE GOES HERE…
-    // ! —————————————————————————————————————————————————————————————————————————————————————————————
-
-    // ! —————————————————————————————————————————————————————————————————————————————————————————————
-    // ! YOUR CODE ENDS HERE…
-    // ! —————————————————————————————————————————————————————————————————————————————————————————————
-  } finally {
-    // Clear the entity list…
-    for (const BaseEntityPtrs_ of BaseEntityPtrs.values()) {
-      BaseEntityPtrs_.length = 0;
-    }
   }
+
+  const end = performance.now();
+
+  const total = end - start;
+  const average = total / Iterations;
+
+  console.log(
+    'Completed %d iterations in %ss, averaging %sms (%sµs) each…', //
+    Iterations,
+    (total / 1_000).toFixed(2),
+    average.toFixed(2),
+    (average * 1_000).toFixed(2)
+  );
 }
-
-const performance2 = performance.now();
-
-console.log('Test completed in %fms…', (performance2 - performance1).toFixed(2));

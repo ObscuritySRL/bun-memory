@@ -1,4 +1,4 @@
-import { FFIType, dlopen } from 'bun:ffi';
+import { FFIType, dlopen, ptr } from 'bun:ffi';
 import { sleep } from 'bun';
 
 import Memory from 'bun-memory';
@@ -32,11 +32,13 @@ const Client = {
 const cs2 = new Memory('cs2.exe');
 
 // Get the base for client.dll…
-const ClientPtr = cs2.modules['client.dll']?.base;
+const client = cs2.modules['client.dll'];
 
-if (ClientPtr === undefined) {
-  throw new TypeError('ClientPtr must not be undefined.');
+if (client === undefined) {
+  throw new TypeError('client must not be undefined.');
 }
+
+const ClientPtr = client.base;
 
 // Create a cache for class name strings… 🫠…
 const Cache_Names = new Map<bigint, string>();
@@ -97,7 +99,7 @@ async function tick(ClientPtr: bigint) {
     if (Name === undefined) {
       const SchemaClassInfoDataPtr = cs2.u64(EntityClassInfoPtr + 0x30n);
       /* */ const NamePtr = cs2.u64(SchemaClassInfoDataPtr + 0x08n);
-      /*       */ Name = cs2.cString(NamePtr, 0x80).toString();
+      /*       */ Name = cs2.string(NamePtr, 0x80);
 
       Cache_Names.set(EntityClassInfoPtr, Name);
     }
