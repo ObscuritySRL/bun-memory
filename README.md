@@ -28,7 +28,7 @@ bun add bun-memory
 
 ## Quick Start
 
-❗ **Important**: [Example: Using Scratches (Recommended)](#example-using-scratches-recommended)
+For maximum performance, it is highly recommended to read about [using scratches](#example-using-scratches-recommended).
 
 ```ts
 import Memory from 'bun-memory';
@@ -55,7 +55,7 @@ cs2.close();
 - `indexOf(needle, address, length, [all])` — Search for a buffer or array in memory (returns all matches if all=true)
 - `pattern(needle, address, length, [all])` — Find a byte pattern in memory (supports wildcards, returns all matches if all=true)
 - `read(address, scratch)` — Read memory into a scratch (no allocations)
-- `write(address, scratch)` — Write a scratch to memory
+- `write(address, scratch, [force])` — Write a scratch to memory
 - Module map: `memory.modules['client.dll']`
 - Typed accessors: `bool`, `f32`, `i32`, `matrix4x4`, `u8`, `u64Array`, `vector3`, etc.
 
