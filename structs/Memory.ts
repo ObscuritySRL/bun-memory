@@ -4,27 +4,21 @@ import type { Module, NetworkUtlVector, Point, QAngle, Quaternion, Region, RGB, 
 import Win32Error from './Win32Error';
 
 const {
-  symbols: { CloseHandle, CreateToolhelp32Snapshot, GetLastError, Module32FirstW, Module32NextW, OpenProcess, Process32FirstW, Process32NextW, ReadProcessMemory, VirtualQueryEx, WriteProcessMemory },
+  symbols: { CloseHandle, CreateToolhelp32Snapshot, GetLastError, Module32FirstW, Module32NextW, OpenProcess, Process32FirstW, Process32NextW, ReadProcessMemory, VirtualProtectEx, WriteProcessMemory },
 } = dlopen('kernel32.dll', {
   CloseHandle: { args: [FFIType.u64], returns: FFIType.bool },
-  CreateRemoteThread: { args: [FFIType.u64, FFIType.u64, FFIType.u64, FFIType.u64, FFIType.u64, FFIType.u32, FFIType.ptr], returns: FFIType.u64 },
   CreateToolhelp32Snapshot: { args: [FFIType.u32, FFIType.u32], returns: FFIType.u64 },
   GetCurrentProcess: { args: [], returns: FFIType.ptr },
-  GetExitCodeThread: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.bool },
   GetLastError: { returns: FFIType.u32 },
-  IsWow64Process2: { args: [FFIType.u64, FFIType.ptr, FFIType.ptr], returns: FFIType.bool },
   Module32FirstW: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.bool },
   Module32NextW: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.bool },
   OpenProcess: { args: [FFIType.u32, FFIType.bool, FFIType.u32], returns: FFIType.u64 },
   Process32FirstW: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.bool },
   Process32NextW: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.bool },
-  ReadProcessMemory: { args: [FFIType.u64, FFIType.u64, FFIType.ptr, FFIType.u64_fast, FFIType.ptr], returns: FFIType.bool },
-  VirtualAllocEx: { args: [FFIType.u64, FFIType.u64, FFIType.u64, FFIType.u32, FFIType.u32], returns: FFIType.u64 },
-  VirtualFreeEx: { args: [FFIType.u64, FFIType.u64, FFIType.u64, FFIType.u32], returns: FFIType.bool },
+  ReadProcessMemory: { args: [FFIType.u64, FFIType.u64, FFIType.ptr, FFIType.u64, FFIType.ptr], returns: FFIType.bool },
   VirtualProtectEx: { args: [FFIType.u64, FFIType.u64, FFIType.u64, FFIType.u32, FFIType.ptr], returns: FFIType.bool },
   VirtualQueryEx: { args: [FFIType.u64, FFIType.u64, FFIType.ptr, FFIType.u64], returns: FFIType.u64 },
-  WaitForSingleObject: { args: [FFIType.u64, FFIType.u32], returns: FFIType.u32 },
-  WriteProcessMemory: { args: [FFIType.u64, FFIType.u64, FFIType.ptr, FFIType.u64_fast, FFIType.ptr], returns: FFIType.bool },
+  WriteProcessMemory: { args: [FFIType.u64, FFIType.u64, FFIType.ptr, FFIType.u64, FFIType.ptr], returns: FFIType.bool },
 });
 
 /**
@@ -116,17 +110,6 @@ class Memory {
     throw new Error(`Process not found: ${identifier}…`);
   }
 
-  // public call(address: bigint, args: { type: FFIType, value: any }[] = [], timeout: number = 5_000): bigint {}
-
-  /**
-   * Memory protection flags for safe and unsafe regions.
-   * Used to filter readable/writable memory areas.
-   */
-  private static readonly MemoryProtections = {
-    Safe: 0x10 /* PAGE_EXECUTE */ | 0x20 /* PAGE_EXECUTE_READ */ | 0x40 /* PAGE_EXECUTE_READWRITE */ | 0x80 /* PAGE_EXECUTE_WRITECOPY */ | 0x02 /* PAGE_READONLY */ | 0x04 /* PAGE_READWRITE */ | 0x08 /* PAGE_WRITECOPY */,
-    Unsafe: 0x100 /* PAGE_GUARD */ | 0x01 /* PAGE_NOACCESS */,
-  };
-
   /**
    * Regex patterns for matching hex strings and wildcards in memory scans.
    * Used by the pattern method.
@@ -177,7 +160,6 @@ class Memory {
   private readonly Scratch16 = new Uint8Array(0x10);
   private readonly Scratch16Float32Array = new Float32Array(this.Scratch16.buffer, this.Scratch16.byteOffset, 0x04);
 
-  private readonly ScratchMemoryBasicInformation = Buffer.allocUnsafe(0x30 /* sizeof(MEMORY_BASIC_INFORMATION) */);
   private readonly ScratchModuleEntry32W = Buffer.allocUnsafe(0x438 /* sizeof(MODULEENTRY32W) */);
 
   private static TextDecoderUTF8 = new TextDecoder('utf-8');
@@ -305,7 +287,7 @@ class Memory {
   public read<T extends Scratch>(address: bigint, scratch: T): T {
     const lpBaseAddress = address;
     const lpBuffer = ptr(scratch);
-    const nSize = scratch.byteLength;
+    const nSize = BigInt(scratch.byteLength);
     const numberOfBytesRead = 0x00n;
 
     const bReadProcessMemory = ReadProcessMemory(this.hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesRead);
@@ -321,25 +303,57 @@ class Memory {
    * Writes a buffer to memory.
    * @param address Address to write to.
    * @param scratch Buffer to write.
+   * @param force If true, temporarily changes the page protection to PAGE_EXECUTE_READWRITE using `VirtualProtectEx` while performing the write.
    * @returns This instance.
-   * @todo Add a `force: boolean` option that uses `VirtualProtectEx` for a temporary protection change when set to `true`.
-   * @todo Consider inlining the call in the if to cut a binding… I hate the idea… 🫠…
    * @example
    * ```ts
    * const cs2 = new Memory('cs2.exe');
    * cs2.write(0x12345678n, new Uint8Array([1,2,3,4]));
+   * // Force a write by temporarily changing memory protection
+   * cs2.write(0x12345678n, new Uint8Array([1,2,3,4]), true);
    * ```
    */
-  private write(address: bigint, scratch: Scratch): this {
+  private write(address: bigint, scratch: Scratch, force: boolean = false): this {
     const lpBaseAddress = address;
     const lpBuffer = scratch.ptr;
-    const nSize = scratch.byteLength;
+    const nSize = BigInt(scratch.byteLength);
     const numberOfBytesWritten = 0x00n;
 
-    const bWriteProcessMemory = WriteProcessMemory(this.hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesWritten);
+    if (!force) {
+      const bWriteProcessMemory = WriteProcessMemory(this.hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesWritten);
 
-    if (!bWriteProcessMemory) {
-      throw new Win32Error('WriteProcessMemory', GetLastError());
+      if (!bWriteProcessMemory) {
+        throw new Win32Error('WriteProcessMemory', GetLastError());
+      }
+
+      return this;
+    }
+
+    const dwSize = nSize;
+    const flNewProtect = 0x40; /* PAGE_EXECUTE_READWRITE */
+    const lpflOldProtect = Buffer.allocUnsafe(0x04);
+
+    const bVirtualProtectEx = VirtualProtectEx(this.hProcess, lpBaseAddress, dwSize, flNewProtect, lpflOldProtect.ptr);
+
+    if (!bVirtualProtectEx) {
+      throw new Win32Error('VirtualProtectEx', GetLastError());
+    }
+
+    try {
+      const bWriteProcessMemory = WriteProcessMemory(this.hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesWritten);
+
+      if (!bWriteProcessMemory) {
+        throw new Win32Error('WriteProcessMemory', GetLastError());
+      }
+    } finally {
+      const flNewProtect2 = lpflOldProtect.readUInt32LE(0x00);
+      const lpflOldProtect2 = Buffer.allocUnsafe(0x04);
+
+      const bVirtualProtectEx2 = VirtualProtectEx(this.hProcess, lpBaseAddress, dwSize, flNewProtect2, lpflOldProtect2.ptr);
+
+      if (!bVirtualProtectEx2) {
+        throw new Win32Error('VirtualProtectEx', GetLastError());
+      }
     }
 
     return this;
@@ -368,7 +382,7 @@ class Memory {
 
     Scratch1[0x00] = value ? 1 : 0;
 
-    this.write(address, Scratch1);
+    void this.write(address, Scratch1);
 
     return this;
   }
@@ -397,7 +411,7 @@ class Memory {
 
     const value = lengthOrValue;
 
-    this.write(address, value);
+    void this.write(address, value);
 
     return this;
   }
@@ -433,7 +447,7 @@ class Memory {
 
     const scratch = Buffer.from(lengthOrValue);
 
-    this.write(address, scratch);
+    void this.write(address, scratch);
 
     return this;
   }
@@ -461,7 +475,7 @@ class Memory {
 
     Scratch4Float32Array[0x00] = value;
 
-    this.write(address, Scratch4Float32Array);
+    void this.write(address, Scratch4Float32Array);
 
     return this;
   }
@@ -492,7 +506,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -520,7 +534,7 @@ class Memory {
 
     Scratch8Float64Array[0x00] = value;
 
-    this.write(address, Scratch8Float64Array);
+    void this.write(address, Scratch8Float64Array);
 
     return this;
   }
@@ -551,7 +565,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -579,7 +593,7 @@ class Memory {
 
     Scratch2Int16Array[0x00] = value;
 
-    this.write(address, Scratch2Int16Array);
+    void this.write(address, Scratch2Int16Array);
 
     return this;
   }
@@ -610,7 +624,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -638,7 +652,7 @@ class Memory {
 
     Scratch4Int32Array[0x00] = value;
 
-    this.write(address, Scratch4Int32Array);
+    void this.write(address, Scratch4Int32Array);
 
     return this;
   }
@@ -669,7 +683,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -697,7 +711,7 @@ class Memory {
 
     Scratch8BigInt64Array[0x00] = value;
 
-    this.write(address, Scratch8BigInt64Array);
+    void this.write(address, Scratch8BigInt64Array);
 
     return this;
   }
@@ -728,7 +742,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -756,7 +770,7 @@ class Memory {
 
     Scratch1Int8Array[0x00] = value;
 
-    this.write(address, Scratch1Int8Array);
+    void this.write(address, Scratch1Int8Array);
 
     return this;
   }
@@ -787,7 +801,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -819,7 +833,7 @@ class Memory {
       throw new RangeError('values.length must be 9.');
     }
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -851,7 +865,7 @@ class Memory {
       throw new RangeError('values.length must be 12.');
     }
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -883,7 +897,7 @@ class Memory {
       throw new RangeError('values.length must be 16.');
     }
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -917,7 +931,7 @@ class Memory {
 
     this.u32(address, values.length);
 
-    this.write(elementsPtr, values);
+    void this.write(elementsPtr, values);
 
     return this;
   }
@@ -951,7 +965,7 @@ class Memory {
     Scratch8Float32Array[0x00] = value.x;
     Scratch8Float32Array[0x01] = value.y;
 
-    this.write(address, Scratch8Float32Array);
+    void this.write(address, Scratch8Float32Array);
 
     return this;
   }
@@ -999,7 +1013,7 @@ class Memory {
       scratch[j + 0x01] = vector2.y;
     }
 
-    this.write(address, scratch);
+    void this.write(address, scratch);
 
     return this;
   }
@@ -1015,7 +1029,7 @@ class Memory {
       throw new RangeError('values.length must be 2.');
     }
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -1051,7 +1065,7 @@ class Memory {
     Scratch12Float32Array[0x02] = value.roll;
     Scratch12Float32Array[0x01] = value.yaw;
 
-    this.write(address, Scratch12Float32Array);
+    void this.write(address, Scratch12Float32Array);
 
     return this;
   }
@@ -1101,7 +1115,7 @@ class Memory {
       scratch[j + 0x01] = qAngle.yaw;
     }
 
-    this.write(address, scratch);
+    void this.write(address, scratch);
 
     return this;
   }
@@ -1129,7 +1143,7 @@ class Memory {
       throw new RangeError('values.length must be 3.');
     }
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -1167,7 +1181,7 @@ class Memory {
     Scratch16Float32Array[0x01] = value.y;
     Scratch16Float32Array[0x02] = value.z;
 
-    this.write(address, Scratch16Float32Array);
+    void this.write(address, Scratch16Float32Array);
 
     return this;
   }
@@ -1219,7 +1233,7 @@ class Memory {
       scratch[j + 0x02] = quaternion.z;
     }
 
-    this.write(address, scratch);
+    void this.write(address, scratch);
 
     return this;
   }
@@ -1247,7 +1261,7 @@ class Memory {
       throw new RangeError('values.length must be 4.');
     }
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -1283,7 +1297,9 @@ class Memory {
     Scratch3[0x01] = value.g;
     Scratch3[0x02] = value.b;
 
-    return this.write(address, Scratch3);
+    void this.write(address, Scratch3);
+
+    return this;
   }
 
   /**
@@ -1309,7 +1325,7 @@ class Memory {
       throw new RangeError('values.length must be 3.');
     }
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -1347,7 +1363,9 @@ class Memory {
     Scratch4[0x02] = value.b;
     Scratch4[0x03] = value.a;
 
-    return this.write(address, Scratch4);
+    void this.write(address, Scratch4);
+
+    return this;
   }
 
   /**
@@ -1373,7 +1391,7 @@ class Memory {
       throw new RangeError('values.length must be 4.');
     }
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -1384,6 +1402,7 @@ class Memory {
    * @param lengthOrValue Length to read or string to write.
    * @returns The string at address, or this instance if writing.
    * @notice When writing, remember to null-terminate your string (e.g., 'hello\0').
+   * @todo Compare performance when using CString vs TextDecoder when reading…
    * @example
    * ```ts
    * const cs2 = new Memory('cs2.exe');
@@ -1410,7 +1429,7 @@ class Memory {
 
     const scratch = Memory.TextEncoderUTF8.encode(lengthOrValue);
 
-    this.write(address, scratch);
+    void this.write(address, scratch);
 
     return this;
   }
@@ -1438,7 +1457,7 @@ class Memory {
 
     Scratch2Uint16Array[0x00] = value;
 
-    this.write(address, Scratch2Uint16Array);
+    void this.write(address, Scratch2Uint16Array);
 
     return this;
   }
@@ -1469,7 +1488,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -1497,7 +1516,7 @@ class Memory {
 
     Scratch4Uint32Array[0x00] = value;
 
-    this.write(address, Scratch4Uint32Array);
+    void this.write(address, Scratch4Uint32Array);
 
     return this;
   }
@@ -1528,7 +1547,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -1556,7 +1575,7 @@ class Memory {
 
     Scratch8BigUint64Array[0x00] = value;
 
-    this.write(address, Scratch8BigUint64Array);
+    void this.write(address, Scratch8BigUint64Array);
 
     return this;
   }
@@ -1587,7 +1606,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -1615,7 +1634,7 @@ class Memory {
 
     Scratch1[0x00] = value;
 
-    this.write(address, Scratch1);
+    void this.write(address, Scratch1);
 
     return this;
   }
@@ -1646,7 +1665,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -1754,7 +1773,7 @@ class Memory {
       throw new RangeError('values.length must be 2.');
     }
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -1790,7 +1809,7 @@ class Memory {
     Scratch12Float32Array[0x01] = value.y;
     Scratch12Float32Array[0x02] = value.z;
 
-    this.write(address, Scratch12Float32Array);
+    void this.write(address, Scratch12Float32Array);
 
     return this;
   }
@@ -1840,7 +1859,7 @@ class Memory {
       scratch[j + 0x02] = vector3.z;
     }
 
-    this.write(address, scratch);
+    void this.write(address, scratch);
 
     return this;
   }
@@ -1856,7 +1875,7 @@ class Memory {
       throw new RangeError('values.length must be 3.');
     }
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
@@ -1918,7 +1937,7 @@ class Memory {
       throw new RangeError('values.length must be 4.');
     }
 
-    this.write(address, values);
+    void this.write(address, values);
 
     return this;
   }
