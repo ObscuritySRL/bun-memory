@@ -303,7 +303,7 @@ class Memory {
    * Writes a buffer to memory.
    * @param address Address to write to.
    * @param scratch Buffer to write.
-   * @param force If true, temporarily changes the page protection to PAGE_EXECUTE_READWRITE using `VirtualProtectEx` while performing the write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns This instance.
    * @example
    * ```ts
@@ -313,7 +313,7 @@ class Memory {
    * cs2.write(0x12345678n, new Uint8Array([1,2,3,4]), true);
    * ```
    */
-  private write(address: bigint, scratch: Scratch, force: boolean = false): this {
+  public write(address: bigint, scratch: Scratch, force: boolean = false): this {
     const lpBaseAddress = address;
     const lpBuffer = scratch.ptr;
     const nSize = BigInt(scratch.byteLength);
@@ -363,6 +363,7 @@ class Memory {
    * Reads or writes a boolean value.
    * @param address Address to access.
    * @param value Optional value to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The boolean at address, or this instance if writing.
    * @example
    * ```ts
@@ -372,8 +373,8 @@ class Memory {
    * ```
    */
   public bool(address: bigint): boolean;
-  public bool(address: bigint, value: boolean): this;
-  public bool(address: bigint, value?: boolean): boolean | this {
+  public bool(address: bigint, value: boolean, force?: boolean): this;
+  public bool(address: bigint, value?: boolean, force?: boolean): boolean | this {
     const Scratch1 = this.Scratch1;
 
     if (value === undefined) {
@@ -382,7 +383,7 @@ class Memory {
 
     Scratch1[0x00] = value ? 1 : 0;
 
-    void this.write(address, Scratch1);
+    void this.write(address, Scratch1, force);
 
     return this;
   }
@@ -391,6 +392,7 @@ class Memory {
    * Reads or writes a Buffer.
    * @param address Address to access.
    * @param lengthOrValue Length to read or Buffer to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Buffer read or this instance if writing.
    * @example
    * ```ts
@@ -400,8 +402,8 @@ class Memory {
    * ```
    */
   public buffer(address: bigint, length: number): Buffer;
-  public buffer(address: bigint, value: Buffer): this;
-  public buffer(address: bigint, lengthOrValue: number | Buffer): Buffer | this {
+  public buffer(address: bigint, value: Buffer, force?: boolean): this;
+  public buffer(address: bigint, lengthOrValue: number | Buffer, force?: boolean): Buffer | this {
     if (typeof lengthOrValue === 'number') {
       const length = lengthOrValue;
       const scratch = Buffer.allocUnsafe(length);
@@ -411,7 +413,7 @@ class Memory {
 
     const value = lengthOrValue;
 
-    void this.write(address, value);
+    void this.write(address, value, force);
 
     return this;
   }
@@ -420,6 +422,7 @@ class Memory {
    * Reads or writes a C-style string.
    * @param address Address to access.
    * @param lengthOrValue Length to read or CString to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns CString read or this instance if writing.
    * @example
    * ```ts
@@ -429,8 +432,8 @@ class Memory {
    * ```
    */
   public cString(address: bigint, length: number): CString;
-  public cString(address: bigint, value: CString): this;
-  public cString(address: bigint, lengthOrValue: number | CString): CString | this {
+  public cString(address: bigint, value: CString, force?: boolean): this;
+  public cString(address: bigint, lengthOrValue: number | CString, force?: boolean): CString | this {
     if (typeof lengthOrValue === 'number') {
       const scratch = new Uint8Array(lengthOrValue);
 
@@ -447,7 +450,7 @@ class Memory {
 
     const scratch = Buffer.from(lengthOrValue);
 
-    void this.write(address, scratch);
+    void this.write(address, scratch, force);
 
     return this;
   }
@@ -456,6 +459,7 @@ class Memory {
    * Reads or writes a 32-bit float.
    * @param address Address to access.
    * @param value Optional value to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The float at address, or this instance if writing.
    * @example
    * ```ts
@@ -465,8 +469,8 @@ class Memory {
    * ```
    */
   public f32(address: bigint): number;
-  public f32(address: bigint, value: number): this;
-  public f32(address: bigint, value?: number): number | this {
+  public f32(address: bigint, value: number, force?: boolean): this;
+  public f32(address: bigint, value?: number, force?: boolean): number | this {
     const Scratch4Float32Array = this.Scratch4Float32Array; // prettier-ignore
 
     if (value === undefined) {
@@ -475,7 +479,7 @@ class Memory {
 
     Scratch4Float32Array[0x00] = value;
 
-    void this.write(address, Scratch4Float32Array);
+    void this.write(address, Scratch4Float32Array, force);
 
     return this;
   }
@@ -484,6 +488,7 @@ class Memory {
    * Reads or writes a Float32Array.
    * @param address Address to access.
    * @param lengthOrValues Length to read or Float32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Float32Array read or this instance if writing.
    * @example
    * ```ts
@@ -493,8 +498,8 @@ class Memory {
    * ```
    */
   public f32Array(address: bigint, length: number): Float32Array;
-  public f32Array(address: bigint, values: Float32Array): this;
-  public f32Array(address: bigint, lengthOrValues: Float32Array | number): Float32Array | this {
+  public f32Array(address: bigint, values: Float32Array, force?: boolean): this;
+  public f32Array(address: bigint, lengthOrValues: Float32Array | number, force?: boolean): Float32Array | this {
     if (typeof lengthOrValues === 'number') {
       const length = lengthOrValues;
       const scratch = new Float32Array(length);
@@ -506,7 +511,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -515,6 +520,7 @@ class Memory {
    * Reads or writes a 64-bit float.
    * @param address Address to access.
    * @param value Optional value to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The float at address, or this instance if writing.
    * @example
    * ```ts
@@ -524,8 +530,8 @@ class Memory {
    * ```
    */
   public f64(address: bigint): number;
-  public f64(address: bigint, value: number): this;
-  public f64(address: bigint, value?: number): number | this {
+  public f64(address: bigint, value: number, force?: boolean): this;
+  public f64(address: bigint, value?: number, force?: boolean): number | this {
     const Scratch8Float64Array = this.Scratch8Float64Array; // prettier-ignore
 
     if (value === undefined) {
@@ -534,7 +540,7 @@ class Memory {
 
     Scratch8Float64Array[0x00] = value;
 
-    void this.write(address, Scratch8Float64Array);
+    void this.write(address, Scratch8Float64Array, force);
 
     return this;
   }
@@ -543,6 +549,7 @@ class Memory {
    * Reads or writes a Float64Array.
    * @param address Address to access.
    * @param lengthOrValues Length to read or Float64Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Float64Array read or this instance if writing.
    * @example
    * ```ts
@@ -552,8 +559,8 @@ class Memory {
    * ```
    */
   public f64Array(address: bigint, length: number): Float64Array;
-  public f64Array(address: bigint, values: Float64Array): this;
-  public f64Array(address: bigint, lengthOrValues: Float64Array | number): Float64Array | this {
+  public f64Array(address: bigint, values: Float64Array, force?: boolean): this;
+  public f64Array(address: bigint, lengthOrValues: Float64Array | number, force?: boolean): Float64Array | this {
     if (typeof lengthOrValues === 'number') {
       const length = lengthOrValues;
       const scratch = new Float64Array(length);
@@ -565,7 +572,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -574,6 +581,7 @@ class Memory {
    * Reads or writes a 16-bit integer.
    * @param address Address to access.
    * @param value Optional value to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The int at address, or this instance if writing.
    * @example
    * ```ts
@@ -583,8 +591,8 @@ class Memory {
    * ```
    */
   public i16(address: bigint): number;
-  public i16(address: bigint, value: number): this;
-  public i16(address: bigint, value?: number): number | this {
+  public i16(address: bigint, value: number, force?: boolean): this;
+  public i16(address: bigint, value?: number, force?: boolean): number | this {
     const Scratch2Int16Array = this.Scratch2Int16Array; // prettier-ignore
 
     if (value === undefined) {
@@ -593,7 +601,7 @@ class Memory {
 
     Scratch2Int16Array[0x00] = value;
 
-    void this.write(address, Scratch2Int16Array);
+    void this.write(address, Scratch2Int16Array, force);
 
     return this;
   }
@@ -602,6 +610,7 @@ class Memory {
    * Reads or writes an Int16Array.
    * @param address Address to access.
    * @param lengthOrValues Length to read or Int16Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Int16Array read or this instance if writing.
    * @example
    * ```ts
@@ -611,8 +620,8 @@ class Memory {
    * ```
    */
   public i16Array(address: bigint, length: number): Int16Array;
-  public i16Array(address: bigint, values: Int16Array): this;
-  public i16Array(address: bigint, lengthOrValues: Int16Array | number): Int16Array | this {
+  public i16Array(address: bigint, values: Int16Array, force?: boolean): this;
+  public i16Array(address: bigint, lengthOrValues: Int16Array | number, force?: boolean): Int16Array | this {
     if (typeof lengthOrValues === 'number') {
       const length = lengthOrValues;
       const scratch = new Int16Array(length);
@@ -624,7 +633,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -633,6 +642,7 @@ class Memory {
    * Reads or writes a 32-bit integer.
    * @param address Address to access.
    * @param value Optional value to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The int at address, or this instance if writing.
    * @example
    * ```ts
@@ -642,8 +652,8 @@ class Memory {
    * ```
    */
   public i32(address: bigint): number;
-  public i32(address: bigint, value: number): this;
-  public i32(address: bigint, value?: number): number | this {
+  public i32(address: bigint, value: number, force?: boolean): this;
+  public i32(address: bigint, value?: number, force?: boolean): number | this {
     const Scratch4Int32Array = this.Scratch4Int32Array;
 
     if (value === undefined) {
@@ -652,7 +662,7 @@ class Memory {
 
     Scratch4Int32Array[0x00] = value;
 
-    void this.write(address, Scratch4Int32Array);
+    void this.write(address, Scratch4Int32Array, force);
 
     return this;
   }
@@ -661,6 +671,7 @@ class Memory {
    * Reads or writes an Int32Array.
    * @param address Address to access.
    * @param lengthOrValues Length to read or Int32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Int32Array read or this instance if writing.
    * @example
    * ```ts
@@ -670,8 +681,8 @@ class Memory {
    * ```
    */
   public i32Array(address: bigint, length: number): Int32Array;
-  public i32Array(address: bigint, values: Int32Array): this;
-  public i32Array(address: bigint, lengthOrValues: Int32Array | number): Int32Array | this {
+  public i32Array(address: bigint, values: Int32Array, force?: boolean): this;
+  public i32Array(address: bigint, lengthOrValues: Int32Array | number, force?: boolean): Int32Array | this {
     if (typeof lengthOrValues === 'number') {
       const length = lengthOrValues;
       const scratch = new Int32Array(length);
@@ -683,7 +694,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -692,6 +703,7 @@ class Memory {
    * Reads or writes a 64-bit integer.
    * @param address Address to access.
    * @param value Optional value to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The bigint at address, or this instance if writing.
    * @example
    * ```ts
@@ -701,8 +713,8 @@ class Memory {
    * ```
    */
   public i64(address: bigint): bigint;
-  public i64(address: bigint, value: bigint): this;
-  public i64(address: bigint, value?: bigint): bigint | this {
+  public i64(address: bigint, value: bigint, force?: boolean): this;
+  public i64(address: bigint, value?: bigint, force?: boolean): bigint | this {
     const Scratch8BigInt64Array = this.Scratch8BigInt64Array;
 
     if (value === undefined) {
@@ -711,7 +723,7 @@ class Memory {
 
     Scratch8BigInt64Array[0x00] = value;
 
-    void this.write(address, Scratch8BigInt64Array);
+    void this.write(address, Scratch8BigInt64Array, force);
 
     return this;
   }
@@ -720,6 +732,7 @@ class Memory {
    * Reads or writes a BigInt64Array.
    * @param address Address to access.
    * @param lengthOrValues Length to read or BigInt64Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns BigInt64Array read or this instance if writing.
    * @example
    * ```ts
@@ -729,8 +742,8 @@ class Memory {
    * ```
    */
   public i64Array(address: bigint, length: number): BigInt64Array;
-  public i64Array(address: bigint, values: BigInt64Array): this;
-  public i64Array(address: bigint, lengthOrValues: BigInt64Array | number): BigInt64Array | this {
+  public i64Array(address: bigint, values: BigInt64Array, force?: boolean): this;
+  public i64Array(address: bigint, lengthOrValues: BigInt64Array | number, force?: boolean): BigInt64Array | this {
     if (typeof lengthOrValues === 'number') {
       const length = lengthOrValues;
       const scratch = new BigInt64Array(length);
@@ -742,7 +755,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -751,6 +764,7 @@ class Memory {
    * Reads or writes an 8-bit integer.
    * @param address Address to access.
    * @param value Optional value to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The int at address, or this instance if writing.
    * @example
    * ```ts
@@ -760,8 +774,8 @@ class Memory {
    * ```
    */
   public i8(address: bigint): number;
-  public i8(address: bigint, value: number): this;
-  public i8(address: bigint, value?: number): number | this {
+  public i8(address: bigint, value: number, force?: boolean): this;
+  public i8(address: bigint, value?: number, force?: boolean): number | this {
     const Scratch1Int8Array = this.Scratch1Int8Array;
 
     if (value === undefined) {
@@ -770,7 +784,7 @@ class Memory {
 
     Scratch1Int8Array[0x00] = value;
 
-    void this.write(address, Scratch1Int8Array);
+    void this.write(address, Scratch1Int8Array, force);
 
     return this;
   }
@@ -779,6 +793,7 @@ class Memory {
    * Reads or writes an Int8Array.
    * @param address Address to access.
    * @param lengthOrValues Length to read or Int8Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Int8Array read or this instance if writing.
    * @example
    * ```ts
@@ -788,8 +803,8 @@ class Memory {
    * ```
    */
   public i8Array(address: bigint, length: number): Int8Array;
-  public i8Array(address: bigint, values: Int8Array): this;
-  public i8Array(address: bigint, lengthOrValues: Int8Array | number): Int8Array | this {
+  public i8Array(address: bigint, values: Int8Array, force?: boolean): this;
+  public i8Array(address: bigint, lengthOrValues: Int8Array | number, force?: boolean): Int8Array | this {
     if (typeof lengthOrValues === 'number') {
       const length = lengthOrValues;
       const scratch = new Int8Array(length);
@@ -801,7 +816,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -810,6 +825,7 @@ class Memory {
    * Reads or writes a 3x3 matrix (Float32Array of length 9).
    * @param address Address to access.
    * @param values Optional Float32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The matrix at address, or this instance if writing.
    * @example
    * ```ts
@@ -819,8 +835,8 @@ class Memory {
    * ```
    */
   public matrix3x3(address: bigint): Float32Array;
-  public matrix3x3(address: bigint, values: Float32Array): this;
-  public matrix3x3(address: bigint, values?: Float32Array): Float32Array | this {
+  public matrix3x3(address: bigint, values: Float32Array, force?: boolean): this;
+  public matrix3x3(address: bigint, values?: Float32Array, force?: boolean): Float32Array | this {
     if (values === undefined) {
       const scratch = new Float32Array(0x09);
 
@@ -833,7 +849,7 @@ class Memory {
       throw new RangeError('values.length must be 9.');
     }
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -842,6 +858,7 @@ class Memory {
    * Reads or writes a 3x4 matrix (Float32Array of length 12).
    * @param address Address to access.
    * @param values Optional Float32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The matrix at address, or this instance if writing.
    * @example
    * ```ts
@@ -851,8 +868,8 @@ class Memory {
    * ```
    */
   public matrix3x4(address: bigint): Float32Array;
-  public matrix3x4(address: bigint, values: Float32Array): this;
-  public matrix3x4(address: bigint, values?: Float32Array): Float32Array | this {
+  public matrix3x4(address: bigint, values: Float32Array, force?: boolean): this;
+  public matrix3x4(address: bigint, values?: Float32Array, force?: boolean): Float32Array | this {
     if (values === undefined) {
       const scratch = new Float32Array(0x0c);
 
@@ -865,7 +882,7 @@ class Memory {
       throw new RangeError('values.length must be 12.');
     }
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -874,6 +891,7 @@ class Memory {
    * Reads or writes a 4x4 matrix (Float32Array of length 16).
    * @param address Address to access.
    * @param values Optional Float32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The matrix at address, or this instance if writing.
    * @example
    * ```ts
@@ -883,8 +901,8 @@ class Memory {
    * ```
    */
   public matrix4x4(address: bigint): Float32Array;
-  public matrix4x4(address: bigint, values: Float32Array): this;
-  public matrix4x4(address: bigint, values?: Float32Array): Float32Array | this {
+  public matrix4x4(address: bigint, values: Float32Array, force?: boolean): this;
+  public matrix4x4(address: bigint, values?: Float32Array, force?: boolean): Float32Array | this {
     if (values === undefined) {
       const scratch = new Float32Array(0x10);
 
@@ -897,7 +915,7 @@ class Memory {
       throw new RangeError('values.length must be 16.');
     }
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -906,6 +924,7 @@ class Memory {
    * Reads or writes a NetworkUtlVector (Uint32Array).
    * @param address Address to access.
    * @param values Optional Uint32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The vector at address, or this instance if writing.
    * @example
    * ```ts
@@ -915,8 +934,8 @@ class Memory {
    * ```
    */
   public networkUtlVector(address: bigint): NetworkUtlVector;
-  public networkUtlVector(address: bigint, values: NetworkUtlVector): this;
-  public networkUtlVector(address: bigint, values?: NetworkUtlVector): NetworkUtlVector | this {
+  public networkUtlVector(address: bigint, values: NetworkUtlVector, force?: boolean): this;
+  public networkUtlVector(address: bigint, values?: NetworkUtlVector, force?: boolean): NetworkUtlVector | this {
     const elementsPtr = this.u64(address + 0x08n);
 
     if (values === undefined) {
@@ -929,9 +948,9 @@ class Memory {
       return scratch;
     }
 
-    this.u32(address, values.length);
+    this.u32(address, values.length, force);
 
-    void this.write(elementsPtr, values);
+    void this.write(elementsPtr, values, force);
 
     return this;
   }
@@ -940,6 +959,7 @@ class Memory {
    * Reads or writes a Point (object with x, y).
    * @param address Address to access.
    * @param value Optional Point to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The point at address, or this instance if writing.
    * @example
    * ```ts
@@ -949,8 +969,8 @@ class Memory {
    * ```
    */
   public point(address: bigint): Point;
-  public point(address: bigint, value: Point): this;
-  public point(address: bigint, value?: Point): Point | this {
+  public point(address: bigint, value: Point, force?: boolean): this;
+  public point(address: bigint, value?: Point, force?: boolean): Point | this {
     const Scratch8Float32Array = this.Scratch8Float32Array;
 
     if (value === undefined) {
@@ -965,7 +985,7 @@ class Memory {
     Scratch8Float32Array[0x00] = value.x;
     Scratch8Float32Array[0x01] = value.y;
 
-    void this.write(address, Scratch8Float32Array);
+    void this.write(address, Scratch8Float32Array, force);
 
     return this;
   }
@@ -974,6 +994,7 @@ class Memory {
    * Reads or writes an array of Points.
    * @param address Address to access.
    * @param lengthOrValues Length to read or array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Array of points read or this instance if writing.
    * @example
    * ```ts
@@ -983,8 +1004,8 @@ class Memory {
    * ```
    */
   public pointArray(address: bigint, length: number): Point[];
-  public pointArray(address: bigint, value: Point[]): this;
-  public pointArray(address: bigint, lengthOrValues: number | Point[]): Point[] | this {
+  public pointArray(address: bigint, value: Point[], force?: boolean): this;
+  public pointArray(address: bigint, lengthOrValues: number | Point[], force?: boolean): Point[] | this {
     if (typeof lengthOrValues === 'number') {
       const length = lengthOrValues;
       const scratch = new Float32Array(length * 2);
@@ -1013,14 +1034,27 @@ class Memory {
       scratch[j + 0x01] = vector2.y;
     }
 
-    void this.write(address, scratch);
+    void this.write(address, scratch, force);
 
     return this;
   }
 
+  /**
+   * Reads or writes a raw Point (two Float32 values) as a Float32Array.
+   * @param address Address to access.
+   * @param values Optional Float32Array of length 2 to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns Float32Array read or this instance if writing.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const myPoint = cs2.pointRaw(0x12345678n);
+   * cs2.pointRaw(0x12345678n, new Float32Array([1, 2]));
+   * ```
+   */
   public pointRaw(address: bigint): Float32Array;
-  public pointRaw(address: bigint, values: Float32Array): this;
-  public pointRaw(address: bigint, values?: Float32Array): Float32Array | this {
+  public pointRaw(address: bigint, values: Float32Array, force?: boolean): this;
+  public pointRaw(address: bigint, values?: Float32Array, force?: boolean): Float32Array | this {
     if (values === undefined) {
       return this.f32Array(address, 0x02);
     }
@@ -1029,7 +1063,7 @@ class Memory {
       throw new RangeError('values.length must be 2.');
     }
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -1047,8 +1081,8 @@ class Memory {
    * ```
    */
   public qAngle(address: bigint): QAngle;
-  public qAngle(address: bigint, value: QAngle): this;
-  public qAngle(address: bigint, value?: QAngle): QAngle | this {
+  public qAngle(address: bigint, value: QAngle, force?: boolean): this;
+  public qAngle(address: bigint, value?: QAngle, force?: boolean): QAngle | this {
     const Scratch12Float32Array = this.Scratch12Float32Array;
 
     if (value === undefined) {
@@ -1065,7 +1099,7 @@ class Memory {
     Scratch12Float32Array[0x02] = value.roll;
     Scratch12Float32Array[0x01] = value.yaw;
 
-    void this.write(address, Scratch12Float32Array);
+    void this.write(address, Scratch12Float32Array, force);
 
     return this;
   }
@@ -1083,8 +1117,8 @@ class Memory {
    * ```
    */
   public qAngleArray(address: bigint, length: number): QAngle[];
-  public qAngleArray(address: bigint, values: QAngle[]): this;
-  public qAngleArray(address: bigint, lengthOrValues: QAngle[] | number): QAngle[] | this {
+  public qAngleArray(address: bigint, values: QAngle[], force?: boolean): this;
+  public qAngleArray(address: bigint, lengthOrValues: QAngle[] | number, force?: boolean): QAngle[] | this {
     if (typeof lengthOrValues === 'number') {
       const length = lengthOrValues;
       const scratch = new Float32Array(length * 0x03);
@@ -1115,7 +1149,7 @@ class Memory {
       scratch[j + 0x01] = qAngle.yaw;
     }
 
-    void this.write(address, scratch);
+    void this.write(address, scratch, force);
 
     return this;
   }
@@ -1124,6 +1158,7 @@ class Memory {
    * Reads or writes a raw QAngle as a Float32Array.
    * @param address Address to access.
    * @param values Optional Float32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Float32Array read or this instance if writing.
    * @example
    * ```ts
@@ -1133,8 +1168,8 @@ class Memory {
    * ```
    */
   public qAngleRaw(address: bigint): Float32Array;
-  public qAngleRaw(address: bigint, values: Float32Array): this;
-  public qAngleRaw(address: bigint, values?: Float32Array): Float32Array | this {
+  public qAngleRaw(address: bigint, values: Float32Array, force?: boolean): this;
+  public qAngleRaw(address: bigint, values?: Float32Array, force?: boolean): Float32Array | this {
     if (values === undefined) {
       return this.f32Array(address, 0x03);
     }
@@ -1143,7 +1178,7 @@ class Memory {
       throw new RangeError('values.length must be 3.');
     }
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -1152,6 +1187,7 @@ class Memory {
    * Reads or writes a Quaternion (object with w, x, y, z).
    * @param address Address to access.
    * @param value Optional Quaternion to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The Quaternion at address, or this instance if writing.
    * @example
    * ```ts
@@ -1161,8 +1197,8 @@ class Memory {
    * ```
    */
   public quaternion(address: bigint): Quaternion;
-  public quaternion(address: bigint, value: Quaternion): this;
-  public quaternion(address: bigint, value?: Quaternion): Quaternion | this {
+  public quaternion(address: bigint, value: Quaternion, force?: boolean): this;
+  public quaternion(address: bigint, value?: Quaternion, force?: boolean): Quaternion | this {
     const Scratch16Float32Array = this.Scratch16Float32Array;
 
     if (value === undefined) {
@@ -1181,7 +1217,7 @@ class Memory {
     Scratch16Float32Array[0x01] = value.y;
     Scratch16Float32Array[0x02] = value.z;
 
-    void this.write(address, Scratch16Float32Array);
+    void this.write(address, Scratch16Float32Array, force);
 
     return this;
   }
@@ -1190,6 +1226,7 @@ class Memory {
    * Reads or writes an array of Quaternions.
    * @param address Address to access.
    * @param lengthOrValues Length to read or array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Array of Quaternions read or this instance if writing.
    * @example
    * ```ts
@@ -1199,8 +1236,8 @@ class Memory {
    * ```
    */
   public quaternionArray(address: bigint, length: number): Quaternion[];
-  public quaternionArray(address: bigint, values: Quaternion[]): this;
-  public quaternionArray(address: bigint, lengthOrValues: Quaternion[] | number): Quaternion[] | this {
+  public quaternionArray(address: bigint, values: Quaternion[], force?: boolean): this;
+  public quaternionArray(address: bigint, lengthOrValues: Quaternion[] | number, force?: boolean): Quaternion[] | this {
     if (typeof lengthOrValues === 'number') {
       const length = lengthOrValues;
       const scratch = new Float32Array(length * 0x04); // 4 * f32 per Quaternion
@@ -1233,7 +1270,7 @@ class Memory {
       scratch[j + 0x02] = quaternion.z;
     }
 
-    void this.write(address, scratch);
+    void this.write(address, scratch, force);
 
     return this;
   }
@@ -1242,6 +1279,7 @@ class Memory {
    * Reads or writes a raw Quaternion as a Float32Array.
    * @param address Address to access.
    * @param values Optional Float32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Float32Array read or this instance if writing.
    * @example
    * ```ts
@@ -1251,8 +1289,8 @@ class Memory {
    * ```
    */
   public quaternionRaw(address: bigint): Float32Array;
-  public quaternionRaw(address: bigint, values: Float32Array): this;
-  public quaternionRaw(address: bigint, values?: Float32Array): Float32Array | this {
+  public quaternionRaw(address: bigint, values: Float32Array, force?: boolean): this;
+  public quaternionRaw(address: bigint, values?: Float32Array, force?: boolean): Float32Array | this {
     if (values === undefined) {
       return this.f32Array(address, 0x04);
     }
@@ -1261,7 +1299,7 @@ class Memory {
       throw new RangeError('values.length must be 4.');
     }
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -1270,6 +1308,7 @@ class Memory {
    * Reads or writes an RGB color (object with r, g, b).
    * @param address Address to access.
    * @param value Optional RGB to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The RGB at address, or this instance if writing.
    * @example
    * ```ts
@@ -1279,8 +1318,8 @@ class Memory {
    * ```
    */
   public rgb(address: bigint): RGB;
-  public rgb(address: bigint, value: RGB): this;
-  public rgb(address: bigint, value?: RGB): RGB | this {
+  public rgb(address: bigint, value: RGB, force?: boolean): this;
+  public rgb(address: bigint, value?: RGB, force?: boolean): RGB | this {
     const Scratch3 = this.Scratch3;
 
     if (value === undefined) {
@@ -1297,7 +1336,7 @@ class Memory {
     Scratch3[0x01] = value.g;
     Scratch3[0x02] = value.b;
 
-    void this.write(address, Scratch3);
+    void this.write(address, Scratch3, force);
 
     return this;
   }
@@ -1306,6 +1345,7 @@ class Memory {
    * Reads or writes a raw RGB value as a Uint8Array.
    * @param address Address to access.
    * @param values Optional buffer to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Uint8Array read or this instance if writing.
    * @example
    * ```ts
@@ -1315,8 +1355,9 @@ class Memory {
    * ```
    */
   public rgbRaw(address: bigint): Uint8Array;
-  public rgbRaw(address: bigint, values: Buffer | Uint8Array | Uint8ClampedArray): this;
-  public rgbRaw(address: bigint, values?: Buffer | Uint8Array | Uint8ClampedArray): Uint8Array | this {
+  public rgbRaw(address: bigint): Uint8Array;
+  public rgbRaw(address: bigint, values: Buffer | Uint8Array | Uint8ClampedArray, force?: boolean): this;
+  public rgbRaw(address: bigint, values?: Buffer | Uint8Array | Uint8ClampedArray, force?: boolean): Uint8Array | this {
     if (values === undefined) {
       return this.u8Array(address, 0x03);
     }
@@ -1325,7 +1366,7 @@ class Memory {
       throw new RangeError('values.length must be 3.');
     }
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -1334,6 +1375,7 @@ class Memory {
    * Reads or writes an RGBA color (object with r, g, b, a).
    * @param address Address to access.
    * @param value Optional RGBA to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The RGBA at address, or this instance if writing.
    * @example
    * ```ts
@@ -1343,8 +1385,8 @@ class Memory {
    * ```
    */
   public rgba(address: bigint): RGBA;
-  public rgba(address: bigint, value: RGBA): this;
-  public rgba(address: bigint, value?: RGBA): RGBA | this {
+  public rgba(address: bigint, value: RGBA, force?: boolean): this;
+  public rgba(address: bigint, value?: RGBA, force?: boolean): RGBA | this {
     const Scratch4 = this.Scratch4;
 
     if (value === undefined) {
@@ -1363,7 +1405,7 @@ class Memory {
     Scratch4[0x02] = value.b;
     Scratch4[0x03] = value.a;
 
-    void this.write(address, Scratch4);
+    void this.write(address, Scratch4, force);
 
     return this;
   }
@@ -1372,6 +1414,7 @@ class Memory {
    * Reads or writes a raw RGBA value as a Uint8Array.
    * @param address Address to access.
    * @param values Optional buffer to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Uint8Array read or this instance if writing.
    * @example
    * ```ts
@@ -1381,8 +1424,9 @@ class Memory {
    * ```
    */
   public rgbaRaw(address: bigint): Uint8Array;
-  public rgbaRaw(address: bigint, values: Buffer | Uint8Array | Uint8ClampedArray): this;
-  public rgbaRaw(address: bigint, values?: Buffer | Uint8Array | Uint8ClampedArray): Uint8Array | this {
+  public rgbaRaw(address: bigint): Uint8Array;
+  public rgbaRaw(address: bigint, values: Buffer | Uint8Array | Uint8ClampedArray, force?: boolean): this;
+  public rgbaRaw(address: bigint, values?: Buffer | Uint8Array | Uint8ClampedArray, force?: boolean): Uint8Array | this {
     if (values === undefined) {
       return this.u8Array(address, 0x04);
     }
@@ -1391,7 +1435,7 @@ class Memory {
       throw new RangeError('values.length must be 4.');
     }
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -1400,6 +1444,7 @@ class Memory {
    * Reads or writes a UTF-8 string.
    * @param address Address to access.
    * @param lengthOrValue Length to read or string to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The string at address, or this instance if writing.
    * @notice When writing, remember to null-terminate your string (e.g., 'hello\0').
    * @todo Compare performance when using CString vs TextDecoder when reading…
@@ -1411,8 +1456,9 @@ class Memory {
    * ```
    */
   public string(address: bigint, length: number): string;
-  public string(address: bigint, value: string): this;
-  public string(address: bigint, lengthOrValue: number | string): string | this {
+  public string(address: bigint, length: number): string;
+  public string(address: bigint, value: string, force?: boolean): this;
+  public string(address: bigint, lengthOrValue: number | string, force?: boolean): string | this {
     if (typeof lengthOrValue === 'number') {
       const scratch = new Uint8Array(lengthOrValue);
 
@@ -1429,7 +1475,7 @@ class Memory {
 
     const scratch = Memory.TextEncoderUTF8.encode(lengthOrValue);
 
-    void this.write(address, scratch);
+    void this.write(address, scratch, force);
 
     return this;
   }
@@ -1438,6 +1484,7 @@ class Memory {
    * Reads or writes a 16-bit unsigned integer.
    * @param address Address to access.
    * @param value Optional value to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The value at address, or this instance if writing.
    * @example
    * ```ts
@@ -1447,8 +1494,8 @@ class Memory {
    * ```
    */
   public u16(address: bigint): number;
-  public u16(address: bigint, value: number): this;
-  public u16(address: bigint, value?: number): number | this {
+  public u16(address: bigint, value: number, force?: boolean): this;
+  public u16(address: bigint, value?: number, force?: boolean): number | this {
     const Scratch2Uint16Array = this.Scratch2Uint16Array;
 
     if (value === undefined) {
@@ -1457,7 +1504,7 @@ class Memory {
 
     Scratch2Uint16Array[0x00] = value;
 
-    void this.write(address, Scratch2Uint16Array);
+    void this.write(address, Scratch2Uint16Array, force);
 
     return this;
   }
@@ -1466,6 +1513,7 @@ class Memory {
    * Reads or writes a Uint16Array.
    * @param address Address to access.
    * @param lengthOrValues Length to read or Uint16Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Uint16Array read or this instance if writing.
    * @example
    * ```ts
@@ -1475,8 +1523,8 @@ class Memory {
    * ```
    */
   public u16Array(address: bigint, length: number): Uint16Array;
-  public u16Array(address: bigint, values: Uint16Array): this;
-  public u16Array(address: bigint, lengthOrValues: Uint16Array | number): Uint16Array | this {
+  public u16Array(address: bigint, values: Uint16Array, force?: boolean): this;
+  public u16Array(address: bigint, lengthOrValues: Uint16Array | number, force?: boolean): Uint16Array | this {
     if (typeof lengthOrValues === 'number') {
       const length = lengthOrValues;
       const scratch = new Uint16Array(length);
@@ -1488,7 +1536,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -1497,6 +1545,7 @@ class Memory {
    * Reads or writes a 32-bit unsigned integer.
    * @param address Address to access.
    * @param value Optional value to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The value at address, or this instance if writing.
    * @example
    * ```ts
@@ -1506,8 +1555,8 @@ class Memory {
    * ```
    */
   public u32(address: bigint): number;
-  public u32(address: bigint, value: number): this;
-  public u32(address: bigint, value?: number): number | this {
+  public u32(address: bigint, value: number, force?: boolean): this;
+  public u32(address: bigint, value?: number, force?: boolean): number | this {
     const Scratch4Uint32Array = this.Scratch4Uint32Array;
 
     if (value === undefined) {
@@ -1516,7 +1565,7 @@ class Memory {
 
     Scratch4Uint32Array[0x00] = value;
 
-    void this.write(address, Scratch4Uint32Array);
+    void this.write(address, Scratch4Uint32Array, force);
 
     return this;
   }
@@ -1525,6 +1574,7 @@ class Memory {
    * Reads or writes a Uint32Array.
    * @param address Address to access.
    * @param lengthOrValues Length to read or Uint32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Uint32Array read or this instance if writing.
    * @example
    * ```ts
@@ -1534,8 +1584,8 @@ class Memory {
    * ```
    */
   public u32Array(address: bigint, length: number): Uint32Array;
-  public u32Array(address: bigint, values: Uint32Array): this;
-  public u32Array(address: bigint, lengthOrValues: Uint32Array | number): Uint32Array | this {
+  public u32Array(address: bigint, values: Uint32Array, force?: boolean): this;
+  public u32Array(address: bigint, lengthOrValues: Uint32Array | number, force?: boolean): Uint32Array | this {
     if (typeof lengthOrValues === 'number') {
       const length = lengthOrValues;
       const scratch = new Uint32Array(length);
@@ -1547,7 +1597,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -1556,6 +1606,7 @@ class Memory {
    * Reads or writes a 64-bit unsigned integer.
    * @param address Address to access.
    * @param value Optional value to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The bigint at address, or this instance if writing.
    * @example
    * ```ts
@@ -1565,8 +1616,8 @@ class Memory {
    * ```
    */
   public u64(address: bigint): bigint;
-  public u64(address: bigint, value: bigint): this;
-  public u64(address: bigint, value?: bigint): bigint | this {
+  public u64(address: bigint, value: bigint, force?: boolean): this;
+  public u64(address: bigint, value?: bigint, force?: boolean): bigint | this {
     const Scratch8BigUint64Array = this.Scratch8BigUint64Array;
 
     if (value === undefined) {
@@ -1575,7 +1626,7 @@ class Memory {
 
     Scratch8BigUint64Array[0x00] = value;
 
-    void this.write(address, Scratch8BigUint64Array);
+    void this.write(address, Scratch8BigUint64Array, force);
 
     return this;
   }
@@ -1584,6 +1635,7 @@ class Memory {
    * Reads or writes a BigUint64Array.
    * @param address Address to access.
    * @param lengthOrValues Length to read or BigUint64Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns BigUint64Array read or this instance if writing.
    * @example
    * ```ts
@@ -1593,8 +1645,8 @@ class Memory {
    * ```
    */
   public u64Array(address: bigint, length: number): BigUint64Array;
-  public u64Array(address: bigint, values: BigUint64Array): this;
-  public u64Array(address: bigint, lengthOrValues: BigUint64Array | number): BigUint64Array | this {
+  public u64Array(address: bigint, values: BigUint64Array, force?: boolean): this;
+  public u64Array(address: bigint, lengthOrValues: BigUint64Array | number, force?: boolean): BigUint64Array | this {
     if (typeof lengthOrValues === 'number') {
       const length = lengthOrValues;
       const scratch = new BigUint64Array(length);
@@ -1606,7 +1658,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -1615,6 +1667,7 @@ class Memory {
    * Reads or writes an 8-bit unsigned integer.
    * @param address Address to access.
    * @param value Optional value to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The value at address, or this instance if writing.
    * @example
    * ```ts
@@ -1624,8 +1677,8 @@ class Memory {
    * ```
    */
   public u8(address: bigint): number;
-  public u8(address: bigint, value: number): this;
-  public u8(address: bigint, value?: number): number | this {
+  public u8(address: bigint, value: number, force?: boolean): this;
+  public u8(address: bigint, value?: number, force?: boolean): number | this {
     const Scratch1 = this.Scratch1;
 
     if (value === undefined) {
@@ -1634,7 +1687,7 @@ class Memory {
 
     Scratch1[0x00] = value;
 
-    void this.write(address, Scratch1);
+    void this.write(address, Scratch1, force);
 
     return this;
   }
@@ -1643,6 +1696,7 @@ class Memory {
    * Reads or writes a Uint8Array.
    * @param address Address to access.
    * @param lengthOrValues Length to read or Uint8Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Uint8Array read or this instance if writing.
    * @example
    * ```ts
@@ -1652,8 +1706,8 @@ class Memory {
    * ```
    */
   public u8Array(address: bigint, length: number): Uint8Array;
-  public u8Array(address: bigint, values: Uint8Array): this;
-  public u8Array(address: bigint, lengthOrValues: Uint8Array | number): Uint8Array | this {
+  public u8Array(address: bigint, values: Uint8Array, force?: boolean): this;
+  public u8Array(address: bigint, lengthOrValues: Uint8Array | number, force?: boolean): Uint8Array | this {
     if (typeof lengthOrValues === 'number') {
       const length = lengthOrValues;
       const scratch = new Uint8Array(length);
@@ -1665,7 +1719,7 @@ class Memory {
 
     const values = lengthOrValues;
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -1674,6 +1728,7 @@ class Memory {
    * Reads or writes a pointer-sized unsigned integer.
    * @param address Address to access.
    * @param value Optional value to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The value at address, or this instance if writing.
    * @example
    * ```ts
@@ -1683,20 +1738,21 @@ class Memory {
    * ```
    */
   public uPtr(address: bigint): UPtr;
-  public uPtr(address: bigint, value: UPtr): this;
-  public uPtr(address: bigint, value?: UPtr): UPtr | this {
+  public uPtr(address: bigint, value: UPtr, force?: boolean): this;
+  public uPtr(address: bigint, value?: UPtr, force?: boolean): UPtr | this {
     // TypeScript is funny sometimes, isn't it?… 🫠…
     if (value === undefined) {
       return this.u64(address);
     }
 
-    return this.u64(address, value);
+    return this.u64(address, value, force);
   }
 
   /**
    * Reads or writes an array of pointer-sized unsigned integers.
    * @param address Address to access.
    * @param lengthOrValues Length to read or array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Array read or this instance if writing.
    * @example
    * ```ts
@@ -1706,20 +1762,21 @@ class Memory {
    * ```
    */
   public uPtrArray(address: bigint, length: number): UPtrArray;
-  public uPtrArray(address: bigint, values: UPtrArray): this;
-  public uPtrArray(address: bigint, lengthOrValues: UPtrArray | number): UPtrArray | this {
+  public uPtrArray(address: bigint, values: UPtrArray, force?: boolean): this;
+  public uPtrArray(address: bigint, lengthOrValues: UPtrArray | number, force?: boolean): UPtrArray | this {
     // TypeScript is funny sometimes, isn't it?… 🫠…
     if (typeof lengthOrValues === 'number') {
       return this.u64Array(address, lengthOrValues);
     }
 
-    return this.u64Array(address, lengthOrValues);
+    return this.u64Array(address, lengthOrValues, force);
   }
 
   /**
    * Reads or writes a Vector2 (object with x, y).
    * @param address Address to access.
    * @param value Optional Vector2 to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The Vector2 at address, or this instance if writing.
    * @example
    * ```ts
@@ -1729,42 +1786,56 @@ class Memory {
    * ```
    */
   public vector2(address: bigint): Vector2;
-  public vector2(address: bigint, value: Vector2): this;
-  public vector2(address: bigint, value?: Vector2): Vector2 | this {
+  public vector2(address: bigint, value: Vector2, force?: boolean): this;
+  public vector2(address: bigint, value?: Vector2, force?: boolean): Vector2 | this {
     // TypeScript is funny sometimes, isn't it?… 🫠…
     if (value === undefined) {
       return this.point(address);
     }
 
-    return this.point(address, value);
+    return this.point(address, value, force);
   }
 
   /**
    * Reads or writes an array of Vector2.
    * @param address Address to access.
    * @param lengthOrValues Length to read or array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Array of Vector2 read or this instance if writing.
    * @example
    * ```ts
    * const cs2 = new Memory('cs2.exe');
-   * const myVectors = cs2.vector2Array(0x12345678n, 2);
+   * const myVector2s = cs2.vector2Array(0x12345678n, 2);
    * cs2.vector2Array(0x12345678n, [{ x: 1, y: 2 }, { x: 3, y: 4 }]);
    * ```
    */
   public vector2Array(address: bigint, length: number): Vector2[];
-  public vector2Array(address: bigint, values: Vector2[]): this;
-  public vector2Array(address: bigint, lengthOrValues: Vector2[] | number): Vector2[] | this {
+  public vector2Array(address: bigint, values: Vector2[], force?: boolean): this;
+  public vector2Array(address: bigint, lengthOrValues: Vector2[] | number, force?: boolean): Vector2[] | this {
     // TypeScript is funny sometimes, isn't it?… 🫠…
     if (typeof lengthOrValues === 'number') {
       return this.pointArray(address, lengthOrValues);
     }
 
-    return this.pointArray(address, lengthOrValues);
+    return this.pointArray(address, lengthOrValues, force);
   }
 
+  /**
+   * Reads or writes a raw Vector2 as a Float32Array.
+   * @param address Address to access.
+   * @param values Optional Float32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns Float32Array read or this instance if writing.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const myVector2 = cs2.vector2Raw(0x12345678n);
+   * cs2.vector2Raw(0x12345678n, new Float32Array([1, 2]));
+   * ```
+   */
   public vector2Raw(address: bigint): Float32Array;
-  public vector2Raw(address: bigint, values: Float32Array): this;
-  public vector2Raw(address: bigint, values?: Float32Array): Float32Array | this {
+  public vector2Raw(address: bigint, values: Float32Array, force?: boolean): this;
+  public vector2Raw(address: bigint, values?: Float32Array, force?: boolean): Float32Array | this {
     if (values === undefined) {
       return this.f32Array(address, 0x02);
     }
@@ -1773,7 +1844,7 @@ class Memory {
       throw new RangeError('values.length must be 2.');
     }
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -1782,6 +1853,7 @@ class Memory {
    * Reads or writes a Vector3 (object with x, y, z).
    * @param address Address to access.
    * @param value Optional Vector3 to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The Vector3 at address, or this instance if writing.
    * @example
    * ```ts
@@ -1791,8 +1863,8 @@ class Memory {
    * ```
    */
   public vector3(address: bigint): Vector3;
-  public vector3(address: bigint, value: Vector3): this;
-  public vector3(address: bigint, value?: Vector3): Vector3 | this {
+  public vector3(address: bigint, value: Vector3, force?: boolean): this;
+  public vector3(address: bigint, value?: Vector3, force?: boolean): Vector3 | this {
     const Scratch12Float32Array = this.Scratch12Float32Array;
 
     if (value === undefined) {
@@ -1809,7 +1881,7 @@ class Memory {
     Scratch12Float32Array[0x01] = value.y;
     Scratch12Float32Array[0x02] = value.z;
 
-    void this.write(address, Scratch12Float32Array);
+    void this.write(address, Scratch12Float32Array, force);
 
     return this;
   }
@@ -1818,17 +1890,18 @@ class Memory {
    * Reads or writes an array of Vector3.
    * @param address Address to access.
    * @param lengthOrValues Length to read or array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Array of Vector3 read or this instance if writing.
    * @example
    * ```ts
    * const cs2 = new Memory('cs2.exe');
-   * const myVectors = cs2.vector3Array(0x12345678n, 2);
+   * const myVector3s = cs2.vector3Array(0x12345678n, 2);
    * cs2.vector3Array(0x12345678n, [{ x: 1, y: 2, z: 3 }]);
    * ```
    */
   public vector3Array(address: bigint, length: number): Vector3[];
-  public vector3Array(address: bigint, values: Vector3[]): this;
-  public vector3Array(address: bigint, lengthOrValues: Vector3[] | number): Vector3[] | this {
+  public vector3Array(address: bigint, values: Vector3[], force?: boolean): this;
+  public vector3Array(address: bigint, lengthOrValues: Vector3[] | number, force?: boolean): Vector3[] | this {
     if (typeof lengthOrValues === 'number') {
       const length = lengthOrValues;
       const scratch = new Float32Array(length * 0x03);
@@ -1859,14 +1932,27 @@ class Memory {
       scratch[j + 0x02] = vector3.z;
     }
 
-    void this.write(address, scratch);
+    void this.write(address, scratch, force);
 
     return this;
   }
 
+  /**
+   * Reads or writes a raw Vector3 as a Float32Array.
+   * @param address Address to access.
+   * @param values Optional Float32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns Float32Array read or this instance if writing.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const myVector3 = cs2.vector3Raw(0x12345678n);
+   * cs2.vector3Raw(0x12345678n, new Float32Array([1, 2, 3]));
+   * ```
+   */
   public vector3Raw(address: bigint): Float32Array;
-  public vector3Raw(address: bigint, values: Float32Array): this;
-  public vector3Raw(address: bigint, values?: Float32Array): Float32Array | this {
+  public vector3Raw(address: bigint, values: Float32Array, force?: boolean): this;
+  public vector3Raw(address: bigint, values?: Float32Array, force?: boolean): Float32Array | this {
     if (values === undefined) {
       return this.f32Array(address, 0x03);
     }
@@ -1875,7 +1961,7 @@ class Memory {
       throw new RangeError('values.length must be 3.');
     }
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
@@ -1884,6 +1970,7 @@ class Memory {
    * Reads or writes a Vector4 (object with w, x, y, z).
    * @param address Address to access.
    * @param value Optional Vector4 to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The Vector4 at address, or this instance if writing.
    * @example
    * ```ts
@@ -1893,42 +1980,57 @@ class Memory {
    * ```
    */
   public vector4(address: bigint): Vector4;
-  public vector4(address: bigint, value: Vector4): this;
-  public vector4(address: bigint, value?: Vector4): Vector4 | this {
+  public vector4(address: bigint, value: Vector4, force?: boolean): this;
+  public vector4(address: bigint, value?: Vector4, force?: boolean): Vector4 | this {
     // TypeScript is funny sometimes, isn't it?… 🫠…
     if (value === undefined) {
       return this.quaternion(address);
     }
 
-    return this.quaternion(address, value);
+    return this.quaternion(address, value, force);
   }
 
   /**
    * Reads or writes an array of Vector4.
    * @param address Address to access.
    * @param lengthOrValues Length to read or array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Array of Vector4 read or this instance if writing.
    * @example
    * ```ts
    * const cs2 = new Memory('cs2.exe');
-   * const myVectors = cs2.vector4Array(0x12345678n, 2);
+   * const myVector4s = cs2.vector4Array(0x12345678n, 2);
    * cs2.vector4Array(0x12345678n, [{ w: 1, x: 0, y: 0, z: 0 }]);
    * ```
    */
   public vector4Array(address: bigint, length: number): Vector4[];
-  public vector4Array(address: bigint, values: Vector4[]): this;
-  public vector4Array(address: bigint, lengthOrValues: Vector4[] | number): Vector4[] | this {
+  public vector4Array(address: bigint, values: Vector4[], force?: boolean): this;
+  public vector4Array(address: bigint, lengthOrValues: Vector4[] | number, force?: boolean): Vector4[] | this {
     // TypeScript is funny sometimes, isn't it?… 🫠…
     if (typeof lengthOrValues === 'number') {
       return this.quaternionArray(address, lengthOrValues);
     }
 
-    return this.quaternionArray(address, lengthOrValues);
+    return this.quaternionArray(address, lengthOrValues, force);
   }
 
   public vector4Raw(address: bigint): Float32Array;
-  public vector4Raw(address: bigint, values: Float32Array): this;
-  public vector4Raw(address: bigint, values?: Float32Array): Float32Array | this {
+  /**
+   * Reads or writes a raw Vector4 as a Float32Array.
+   * @param address Address to access.
+   * @param values Optional Float32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns Float32Array read or this instance if writing.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const myVector4 = cs2.vector4Raw(0x12345678n);
+   * cs2.vector4Raw(0x12345678n, new Float32Array([1, 0, 0, 0]));
+   * ```
+   */
+  public vector4Raw(address: bigint): Float32Array;
+  public vector4Raw(address: bigint, values: Float32Array, force?: boolean): this;
+  public vector4Raw(address: bigint, values?: Float32Array, force?: boolean): Float32Array | this {
     if (values === undefined) {
       return this.f32Array(address, 0x04);
     }
@@ -1937,7 +2039,7 @@ class Memory {
       throw new RangeError('values.length must be 4.');
     }
 
-    void this.write(address, values);
+    void this.write(address, values, force);
 
     return this;
   }
