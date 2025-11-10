@@ -1,6 +1,6 @@
 import { CString, FFIType, dlopen, ptr } from 'bun:ffi';
 
-import type { Module, NetworkUtlVector, Point, QAngle, Quaternion, Region, RGB, RGBA, Scratch, UPtr, UPtrArray, Vector2, Vector3, Vector4 } from '../types/Memory';
+import type { Module, Point, QAngle, Quaternion, Region, RGB, RGBA, Scratch, UPtr, UPtrArray, Vector2, Vector3, Vector4 } from '../types/Memory';
 import Win32Error from './Win32Error';
 
 const {
@@ -921,41 +921,6 @@ class Memory {
   }
 
   /**
-   * Reads or writes a NetworkUtlVector (Uint32Array).
-   * @param address Address to access.
-   * @param values Optional Uint32Array to write.
-   * @param force When writing, if true temporarily changes page protection to allow the write.
-   * @returns The vector at address, or this instance if writing.
-   * @example
-   * ```ts
-   * const cs2 = new Memory('cs2.exe');
-   * const myVector = cs2.networkUtlVector(0x12345678n);
-   * cs2.networkUtlVector(0x12345678n, new Uint32Array([1,2,3]));
-   * ```
-   */
-  public networkUtlVector(address: bigint): NetworkUtlVector;
-  public networkUtlVector(address: bigint, values: NetworkUtlVector, force?: boolean): this;
-  public networkUtlVector(address: bigint, values?: NetworkUtlVector, force?: boolean): NetworkUtlVector | this {
-    const elementsPtr = this.u64(address + 0x08n);
-
-    if (values === undefined) {
-      const size = this.u32(address);
-
-      const scratch = new Uint32Array(size);
-
-      void this.read(elementsPtr, scratch);
-
-      return scratch;
-    }
-
-    this.u32(address, values.length, force);
-
-    void this.write(elementsPtr, values, force);
-
-    return this;
-  }
-
-  /**
    * Reads or writes a Point (object with x, y).
    * @param address Address to access.
    * @param value Optional Point to write.
@@ -1770,6 +1735,97 @@ class Memory {
     }
 
     return this.u64Array(address, lengthOrValues, force);
+  }
+
+  /**
+   * Reads a UtlLinkedList of 64-bit unsigned integers and returns its elements as a BigUint64Array.
+   *
+   * This helper reads the list header at `address`, validates the capacity and element pointer,
+   * reads the elements table, and walks the internal linked indices to produce a compact
+   * BigUint64Array of present elements. If the list is empty or invalid an empty array is
+   * returned.
+   *
+   * @param address Address of the UtlLinkedList header in the remote process.
+   * @returns BigUint64Array containing the list elements (empty if the list is invalid or empty).
+   * @todo Create a writer so that users can write linked lists…
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const myList = cs2.utlLinkedListU64(0x12345678n);
+   * ```
+   */
+  public utlLinkedListU64(address: bigint): BigUint64Array {
+    const header = new Uint8Array(0x18);
+    const headerUint16Array = new Uint16Array(header.buffer, header.byteOffset);
+    const headerBigUint64Array = new BigUint64Array(header.buffer, header.byteOffset + 0x08, 2);
+
+    void this.read(address, header);
+
+    const capacity = headerUint16Array[0x01] & 0x7fff;
+    const elementsPtr = headerBigUint64Array[0x00];
+    let   index = headerUint16Array[0x08]; // prettier-ignore
+
+    if (capacity === 0 || capacity <= index || elementsPtr === 0n || index === 0xffff) {
+      return new BigUint64Array(0);
+    }
+
+    const scratch = new Uint8Array(capacity << 0x04);
+    const scratchBigUint64Array = new BigUint64Array(scratch.buffer, scratch.byteOffset);
+    const scratchUint16Array = new Uint16Array(scratch.buffer, scratch.byteOffset);
+
+    void this.read(elementsPtr, scratch);
+
+    let   count = 0; // prettier-ignore
+    const result = new BigUint64Array(capacity);
+
+    while (count < capacity && capacity > index && index !== 0xffff) {
+      result[count++] = scratchBigUint64Array[index * 0x02];
+
+      const next = scratchUint16Array[0x05 + index * 0x08];
+
+      if (index === next || next === 0xffff) {
+        break;
+      }
+
+      index = next;
+    }
+
+    return capacity === count ? result : result.subarray(0, count);
+  }
+
+  /**
+   * Reads or writes a UtlVectorU32 (Uint32Array).
+   * @param address Address to access.
+   * @param values Optional Uint32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns The vector at address, or this instance if writing.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const myVector = cs2.utlVectorU32(0x12345678n);
+   * cs2.utlVectorU32(0x12345678n, new Uint32Array([1,2,3]));
+   * ```
+   */
+  public utlVectorU32(address: bigint): Uint32Array;
+  public utlVectorU32(address: bigint, values: Uint32Array, force?: boolean): this;
+  public utlVectorU32(address: bigint, values?: Uint32Array, force?: boolean): Uint32Array | this {
+    const elementsPtr = this.u64(address + 0x08n);
+
+    if (values === undefined) {
+      const size = this.u32(address);
+
+      const scratch = new Uint32Array(size);
+
+      void this.read(elementsPtr, scratch);
+
+      return scratch;
+    }
+
+    this.u32(address, values.length, force);
+
+    void this.write(elementsPtr, values, force);
+
+    return this;
   }
 
   /**

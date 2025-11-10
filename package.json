@@ -1,29 +1,38 @@
 {
-  "author": "Stev Peifer <stev@bell.net>",
-  "bugs": {
-    "url": "https://github.com/obscuritysrl/bun-memory/issues"
-  },
-  "description": "Blazing fast, high-performance Windows process memory manipulation for Bun.",
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "exports": {
-    ".": "./index.ts"
-  },
-  "license": "MIT",
-  "module": "index.ts",
   "name": "bun-memory",
-  "peerDependencies": {
-    "typescript": "^5"
-  },
-  "private": false,
+  "version": "1.1.40",
+  "author": "Stev Peifer <stev@bell.net>",
   "repository": {
     "type": "git",
     "url": "git://github.com/obscuritysrl/bun-memory.git"
   },
-  "type": "module",
-  "version": "1.1.39",
   "main": "./index.ts",
+  "module": "index.ts",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "exports": {
+    ".": "./index.ts"
+  },
+  "bugs": {
+    "url": "https://github.com/obscuritysrl/bun-memory/issues"
+  },
+  "description": "Blazing fast, high-performance Windows process memory manipulation for Bun.",
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "files": [
+    "index.ts",
+    "example/*.ts",
+    "runtime/*.ts",
+    "structs/*.ts",
+    "types/*.ts",
+    "README.md",
+    "LICENSE"
+  ],
   "keywords": [
     "bun",
     "ffi",
@@ -35,20 +44,11 @@
     "WriteProcessMemory",
     "typescript"
   ],
-  "files": [
-    "index.ts",
-    "example/*.ts",
-    "runtime/*.ts",
-    "structs/*.ts",
-    "types/*.ts",
-    "README.md",
-    "LICENSE"
-  ],
-  "engines": {
-    "bun": ">=1.1.0"
-  },
+  "license": "MIT",
+  "private": false,
   "scripts": {
     "run:benchmark": "bun ./example/benchmark.ts",
     "run:trigger-bot": "bun ./example/trigger-bot.ts"
-  }
+  },
+  "type": "module"
 }

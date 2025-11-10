@@ -49,13 +49,13 @@ for (let i = 0; i < Iterations; i++) {
 // Create caches and scratches to optimize performance…
 const BaseEntityPtrs = new Map<string, bigint[]>();
 
-const EntityChunkScratch = new BigUint64Array(0xf000 / 0x08);
+const EntityChunkScratch = new BigUint64Array(0xe000 / 0x08);
 const EntityListScratch = new BigUint64Array(0x200 / 0x08);
 
 const EntityClassInfoNames = new Map<bigint, string>();
 
 // Start the test…
-for (let i = 0; i < 10; i++) {
+for (let i = 0; i < 5; i++) {
   console.log('Starting the test…');
 
   const start = performance.now();
@@ -77,8 +77,8 @@ for (let i = 0; i < 10; i++) {
 
         void cs2.read(EntityChunkPtr, EntityChunkScratch);
 
-        // Traverse each of the potential 512 entities within this chunk…
-        for (let l = 0; l < 0x1e00; l += 0x0f) {
+        // Traverse the potential 512 entities in that chunk…
+        for (let j = 0x00, l = 0x00; j < 0x200; j++, l += 0x0e) {
           const BaseEntityPtr = EntityChunkScratch[l];
 
           if (BaseEntityPtr === 0n) {

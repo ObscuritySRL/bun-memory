@@ -91,8 +91,8 @@ async function tick(ClientPtr: bigint) {
     // Get the entity that we're aiming at from the entity list…
     const EntityListPtr = cs2.u64(ClientPtr + Client.Other.dwEntityList);
     /* */ const EntityChunkPtr = cs2.u64(EntityListPtr + (BigInt(Local_IDEntIndex) >> 0x09n) * 0x08n + 0x10n);
-    /*       */ const BaseEntityPtr = cs2.u64(EntityChunkPtr + (BigInt(Local_IDEntIndex) & 0x1ffn) * 0x78n);
-    /*             */ const EntityClassInfoPtr = cs2.u64(EntityChunkPtr + (BigInt(Local_IDEntIndex) & 0x1ffn) * 0x78n + 0x08n);
+    /*       */ const BaseEntityPtr = cs2.u64(EntityChunkPtr + (BigInt(Local_IDEntIndex) & 0x1ffn) * 0x70n);
+    /*             */ const EntityClassInfoPtr = cs2.u64(EntityChunkPtr + (BigInt(Local_IDEntIndex) & 0x1ffn) * 0x70n + 0x08n);
 
     let Name = Cache_Names.get(EntityClassInfoPtr);
 
