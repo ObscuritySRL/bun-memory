@@ -1794,6 +1794,46 @@ class Memory {
   }
 
   /**
+   * Reads or writes a generic UtlVector as raw bytes (no typing).
+   * Pass elementSize (bytes per element) so we can set/read the header count.
+   * Optionally provide countOverride to read a specific number of elements regardless of the stored size.
+   * @example
+   * ```ts
+   * const bytes = cs2.utlVectorRaw(0x1234n, 0x14, 5); // read 5 elements of size 0x14 (total 0x78 bytes)
+   * cs2.utlVectorRaw(0x1234n, 0x14); // read size from header
+   * cs2.utlVectorRaw(0x1234n, 0x14, new Uint8Array([...])); // write
+   * ```
+   */
+  public utlVectorRaw(address: bigint, elementSize: number): Uint8Array;
+  public utlVectorRaw(address: bigint, elementSize: number, count: number): Uint8Array;
+  public utlVectorRaw(address: bigint, elementSize: number, values: Uint8Array, force?: boolean): this;
+  public utlVectorRaw(address: bigint, elementSize: number, countOrValues?: number | Uint8Array, force?: boolean): Uint8Array | this {
+    const elementsPtr = this.u64(address + 0x08n);
+
+    if (countOrValues === undefined || typeof countOrValues === 'number') {
+      const count = countOrValues === undefined ? this.u32(address) : countOrValues;
+      const byteLength = count * elementSize;
+      const scratch = new Uint8Array(byteLength);
+
+      void this.read(elementsPtr, scratch);
+
+      return scratch;
+    }
+
+    if (countOrValues.byteLength % elementSize !== 0) {
+      throw new RangeError('values length must be a multiple of elementSize');
+    }
+
+    const count = countOrValues.byteLength / elementSize;
+
+    this.u32(address, count, force);
+
+    void this.write(elementsPtr, countOrValues, force);
+
+    return this;
+  }
+
+  /**
    * Reads or writes a UtlVectorU32 (Uint32Array).
    * @param address Address to access.
    * @param values Optional Uint32Array to write.
@@ -1815,6 +1855,41 @@ class Memory {
       const size = this.u32(address);
 
       const scratch = new Uint32Array(size);
+
+      void this.read(elementsPtr, scratch);
+
+      return scratch;
+    }
+
+    this.u32(address, values.length, force);
+
+    void this.write(elementsPtr, values, force);
+
+    return this;
+  }
+
+  /**
+   * Reads or writes a UtlVectorU64 (BigUint64Array).
+   * @param address Address to access.
+   * @param values Optional BigUint64Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns The vector at address, or this instance if writing.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const myVector = cs2.utlVectorU64(0x12345678n);
+   * cs2.utlVectorU64(0x12345678n, new BigUint64Array([1n,2n,3n]));
+   * ```
+   */
+  public utlVectorU64(address: bigint): BigUint64Array;
+  public utlVectorU64(address: bigint, values: BigUint64Array, force?: boolean): this;
+  public utlVectorU64(address: bigint, values?: BigUint64Array, force?: boolean): BigUint64Array | this {
+    const elementsPtr = this.u64(address + 0x08n);
+
+    if (values === undefined) {
+      const size = this.u32(address);
+
+      const scratch = new BigUint64Array(size);
 
       void this.read(elementsPtr, scratch);
 
