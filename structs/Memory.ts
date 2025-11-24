@@ -1796,22 +1796,24 @@ class Memory {
   /**
    * Reads or writes a generic UtlVector as raw bytes (no typing).
    * Pass elementSize (bytes per element) so we can set/read the header count.
-   * Optionally provide countOverride to read a specific number of elements regardless of the stored size.
    * @example
    * ```ts
-   * const bytes = cs2.utlVectorRaw(0x1234n, 0x14, 5); // read 5 elements of size 0x14 (total 0x78 bytes)
-   * cs2.utlVectorRaw(0x1234n, 0x14); // read size from header
+   * const bytes = cs2.utlVectorRaw(0x1234n, 0x14); // read size*elementSize bytes
    * cs2.utlVectorRaw(0x1234n, 0x14, new Uint8Array([...])); // write
    * ```
    */
   public utlVectorRaw(address: bigint, elementSize: number): Uint8Array;
-  public utlVectorRaw(address: bigint, elementSize: number, count: number): Uint8Array;
   public utlVectorRaw(address: bigint, elementSize: number, values: Uint8Array, force?: boolean): this;
-  public utlVectorRaw(address: bigint, elementSize: number, countOrValues?: number | Uint8Array, force?: boolean): Uint8Array | this {
+  public utlVectorRaw(address: bigint, elementSize: number, values?: Uint8Array, force?: boolean): Uint8Array | this {
     const elementsPtr = this.u64(address + 0x08n);
 
-    if (countOrValues === undefined || typeof countOrValues === 'number') {
-      const count = countOrValues === undefined ? this.u32(address) : countOrValues;
+    if (values === undefined) {
+      const count = this.u32(address);
+
+      if (count === 0 || elementsPtr === 0n) {
+        return new Uint8Array(0);
+      }
+
       const byteLength = count * elementSize;
       const scratch = new Uint8Array(byteLength);
 
@@ -1820,15 +1822,15 @@ class Memory {
       return scratch;
     }
 
-    if (countOrValues.byteLength % elementSize !== 0) {
+    if (values.byteLength % elementSize !== 0) {
       throw new RangeError('values length must be a multiple of elementSize');
     }
 
-    const count = countOrValues.byteLength / elementSize;
+    const count = values.byteLength / elementSize;
 
     this.u32(address, count, force);
 
-    void this.write(elementsPtr, countOrValues, force);
+    void this.write(elementsPtr, values, force);
 
     return this;
   }
