@@ -1,6 +1,7 @@
 import '../runtime/extensions';
 
 import { CString, type Pointer, ptr } from 'bun:ffi';
+
 import Kernel32, { INVALID_HANDLE_VALUE } from 'bun-kernel32';
 
 import type { Module, Point, QAngle, Quaternion, RGB, RGBA, Scratch, UPtr, UPtrArray, Vector2, Vector3, Vector4 } from '../types/Memory';
@@ -42,7 +43,7 @@ class Memory {
 
     const hSnapshot = Kernel32.CreateToolhelp32Snapshot(dwFlags, th32ProcessID);
 
-    if (hSnapshot === -1) {
+    if (hSnapshot === -1n) {
       throw new Win32Error('CreateToolhelp32Snapshot', Kernel32.GetLastError());
     }
 
@@ -75,7 +76,7 @@ class Memory {
 
       const hProcess = Kernel32.OpenProcess(desiredAccess, inheritHandle, th32ProcessID);
 
-      if (hProcess === 0) {
+      if (hProcess === 0n) {
         Kernel32.CloseHandle(hSnapshot);
 
         throw new Win32Error('OpenProcess', Kernel32.GetLastError());
@@ -161,7 +162,7 @@ class Memory {
 
   private static TextEncoderUTF8 = new TextEncoder('utf-8');
 
-  private readonly hProcess: Pointer;
+  private readonly hProcess: bigint;
   private readonly th32ProcessID: number;
 
   /**

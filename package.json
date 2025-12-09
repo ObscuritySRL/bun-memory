@@ -52,6 +52,6 @@
   },
   "type": "module",
   "dependencies": {
-    "bun-kernel32": "^1.0.5"
+    "bun-kernel32": "^1.0.9"
   }
 }
