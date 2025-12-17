@@ -1126,14 +1126,28 @@ class Memory {
 
   /**
    * Reads or writes a QAngle (object with pitch, yaw, roll).
+   *
+   * A QAngle represents an Euler angle rotation commonly used in Source Engine games.
+   * The structure is 12 bytes: 3 consecutive 32-bit floats representing pitch, yaw, and roll.
+   *
    * @param address Address to access.
    * @param value Optional QAngle to write.
+   * @param force When writing, if true temporarily changes page protection to
+   *              PAGE_EXECUTE_READWRITE to allow writing to protected memory regions.
    * @returns The QAngle at address, or this instance if writing.
    * @example
    * ```ts
    * const cs2 = new Memory('cs2.exe');
+   *
+   * // Read a QAngle from memory
    * const myQAngle = cs2.qAngle(0x12345678n);
+   * console.log(`Pitch: ${myQAngle.pitch}, Yaw: ${myQAngle.yaw}, Roll: ${myQAngle.roll}`);
+   *
+   * // Write a QAngle to memory
    * cs2.qAngle(0x12345678n, { pitch: 1, yaw: 2, roll: 3 });
+   *
+   * // Write to protected memory using force flag
+   * cs2.qAngle(0x12345678n, { pitch: 0, yaw: 90, roll: 0 }, true);
    * ```
    */
   public qAngle(address: bigint): QAngle;
@@ -1162,14 +1176,35 @@ class Memory {
 
   /**
    * Reads or writes an array of QAngles.
+   *
+   * Each QAngle is 12 bytes (3 consecutive 32-bit floats). When reading, this method
+   * returns an array of QAngle objects. When writing, it serializes the array and
+   * writes the contiguous float data to memory.
+   *
    * @param address Address to access.
-   * @param lengthOrValues Length to read or array to write.
+   * @param lengthOrValues When reading: number of QAngles to read. When writing: array of
+   *                       QAngle objects to write.
+   * @param force When writing, if true temporarily changes page protection to
+   *              PAGE_EXECUTE_READWRITE to allow writing to protected memory regions.
    * @returns Array of QAngles read or this instance if writing.
    * @example
    * ```ts
    * const cs2 = new Memory('cs2.exe');
+   *
+   * // Read 2 QAngles from memory (24 bytes total)
    * const myQAngles = cs2.qAngleArray(0x12345678n, 2);
-   * cs2.qAngleArray(0x12345678n, [{ pitch: 1, yaw: 2, roll: 3 }]);
+   * myQAngles.forEach((angle, i) => {
+   *   console.log(`Angle ${i}: pitch=${angle.pitch}, yaw=${angle.yaw}, roll=${angle.roll}`);
+   * });
+   *
+   * // Write an array of QAngles to memory
+   * cs2.qAngleArray(0x12345678n, [
+   *   { pitch: 0, yaw: 90, roll: 0 },
+   *   { pitch: 45, yaw: 180, roll: 0 }
+   * ]);
+   *
+   * // Write to protected memory using force flag
+   * cs2.qAngleArray(0x12345678n, [{ pitch: 1, yaw: 2, roll: 3 }], true);
    * ```
    */
   public qAngleArray(address: bigint, length: number): QAngle[];
@@ -1828,18 +1863,44 @@ class Memory {
   /**
    * Reads a UtlLinkedList of 64-bit unsigned integers and returns its elements as a BigUint64Array.
    *
-   * This helper reads the list header at `address`, validates the capacity and element pointer,
-   * reads the elements table, and walks the internal linked indices to produce a compact
-   * BigUint64Array of present elements. If the list is empty or invalid an empty array is
-   * returned.
+   * A UtlLinkedList is a Source Engine data structure that implements a linked list with
+   * preallocated storage. Unlike a traditional linked list with heap-allocated nodes, it uses
+   * a contiguous element table with indices for linking. This is commonly used in games like CS2.
+   *
+   * **Structure Layout (0x18 bytes header):**
+   * - Offset 0x00: uint16 unknown
+   * - Offset 0x02: uint16 capacity (max elements, masked with 0x7FFF)
+   * - Offset 0x08: uint64 elementsPtr (pointer to element table)
+   * - Offset 0x10: uint16 headIndex (index of first element, 0xFFFF if empty)
+   *
+   * **Element Table Entry (0x10 bytes per element):**
+   * - Offset 0x00: uint64 value (the actual element data)
+   * - Offset 0x0A: uint16 nextIndex (index of next element, 0xFFFF for end)
+   *
+   * This method reads the header, validates the structure, then walks the linked indices
+   * starting from headIndex to collect all valid elements into a compact array.
    *
    * @param address Address of the UtlLinkedList header in the remote process.
-   * @returns BigUint64Array containing the list elements (empty if the list is invalid or empty).
+   * @returns BigUint64Array containing the list elements in iteration order. Returns an
+   *          empty array if the list is empty, invalid, or has a null elements pointer.
    * @todo Create a writer so that users can write linked lists…
    * @example
    * ```ts
    * const cs2 = new Memory('cs2.exe');
-   * const myList = cs2.utlLinkedListU64(0x12345678n);
+   *
+   * // Read a linked list of entity handles
+   * const entityHandles = cs2.utlLinkedListU64(0x12345678n);
+   * console.log(`Found ${entityHandles.length} entities`);
+   *
+   * // Iterate over the elements
+   * for (const handle of entityHandles) {
+   *   console.log(`Entity handle: 0x${handle.toString(16)}`);
+   * }
+   *
+   * // Check if list is empty
+   * if (entityHandles.length === 0) {
+   *   console.log('List is empty or invalid');
+   * }
    * ```
    */
   public utlLinkedListU64(address: bigint): BigUint64Array {
@@ -1883,11 +1944,42 @@ class Memory {
 
   /**
    * Reads or writes a generic UtlVector as raw bytes (no typing).
-   * Pass elementSize (bytes per element) so we can set/read the header count.
+   *
+   * A UtlVector is a Source Engine data structure commonly found in games like CS2.
+   * The structure layout is:
+   * - Offset 0x00: uint32 count (number of elements)
+   * - Offset 0x08: uint64 elementsPtr (pointer to element data)
+   *
+   * When reading, this method reads the count from the header, calculates the total
+   * byte length (`count * elementSize`), and returns the raw element data as a Uint8Array.
+   *
+   * When writing, this method updates the count in the header and writes the provided
+   * bytes to the elements pointer. The `values` array length must be a multiple of
+   * `elementSize`.
+   *
+   * @param address Base address of the UtlVector header in the remote process.
+   * @param elementSize Size of each element in bytes (e.g., 0x14 for a 20-byte struct).
+   * @param values Optional Uint8Array containing the raw bytes to write. Must have a
+   *               length that is a multiple of `elementSize`.
+   * @param force When writing, if true temporarily changes page protection to
+   *              PAGE_EXECUTE_READWRITE to allow writing to protected memory regions.
+   * @returns When reading: Uint8Array containing the raw element data (empty if count is 0
+   *          or elementsPtr is null). When writing: this instance for method chaining.
+   * @throws {RangeError} If `values.byteLength` is not a multiple of `elementSize`.
    * @example
    * ```ts
-   * const bytes = cs2.utlVectorRaw(0x1234n, 0x14); // read size*elementSize bytes
-   * cs2.utlVectorRaw(0x1234n, 0x14, new Uint8Array([...])); // write
+   * const cs2 = new Memory('cs2.exe');
+   *
+   * // Read a UtlVector with 20-byte elements
+   * const bytes = cs2.utlVectorRaw(0x12345678n, 0x14);
+   * console.log(`Read ${bytes.byteLength / 0x14} elements`);
+   *
+   * // Write new data to a UtlVector (must be multiple of elementSize)
+   * const newData = new Uint8Array(0x14 * 3); // 3 elements
+   * cs2.utlVectorRaw(0x12345678n, 0x14, newData);
+   *
+   * // Write to protected memory using force flag
+   * cs2.utlVectorRaw(0x12345678n, 0x14, newData, true);
    * ```
    */
   public utlVectorRaw(address: bigint, elementSize: number): Uint8Array;
