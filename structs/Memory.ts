@@ -1,6 +1,6 @@
 import '../runtime/extensions';
 
-import { CString, type Pointer, ptr } from 'bun:ffi';
+import { CString, ptr } from 'bun:ffi';
 
 import Kernel32, { INVALID_HANDLE_VALUE } from 'bun-kernel32';
 
@@ -2260,6 +2260,43 @@ class Memory {
     }
 
     void this.write(address, values, force);
+
+    return this;
+  }
+
+  /**
+   * Reads or writes a wide (UTF-16LE) string.
+   * @param address Address to access.
+   * @param lengthOrValue Length in characters to read or string to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns The string at address, or this instance if writing.
+   * @notice When writing, remember to null-terminate your string (e.g., 'hello\0').
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const myWideString = cs2.wideString(0x12345678n, 16);
+   * cs2.wideString(0x12345678n, 'hello\0');
+   * ```
+   */
+  public wideString(address: bigint, length: number): string;
+  public wideString(address: bigint, value: string, force?: boolean): this;
+  public wideString(address: bigint, lengthOrValue: number | string, force?: boolean): string | this {
+    if (typeof lengthOrValue === 'number') {
+      const scratch = Buffer.allocUnsafe(lengthOrValue * 2);
+
+      void this.read(address, scratch);
+
+      const u16View = new Uint16Array(scratch.buffer, scratch.byteOffset, lengthOrValue);
+      const indexOf = u16View.indexOf(0x0000);
+
+      return scratch.toString('utf16le', 0, (indexOf !== -1 ? indexOf : lengthOrValue) * 2);
+    }
+
+    const scratch = Buffer.allocUnsafe(lengthOrValue.length * 2);
+
+    scratch.write(lengthOrValue, 0, 'utf16le');
+
+    void this.write(address, scratch, force);
 
     return this;
   }
