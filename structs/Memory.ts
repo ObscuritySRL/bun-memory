@@ -1592,8 +1592,12 @@ class Memory {
     const dataPtr = this.u64(address);
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n);
-      const scratch = new Float32Array(count);
+      const count = this.u32(address + 0x08n),
+            scratch = new Float32Array(count); // prettier-ignore
+
+      if (count === 0) {
+        return scratch;
+      }
 
       void this.read(dataPtr, scratch);
 
@@ -1626,8 +1630,12 @@ class Memory {
     const dataPtr = this.u64(address);
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n);
-      const scratch = new Float64Array(count);
+      const count = this.u32(address + 0x08n),
+            scratch = new Float64Array(count); // prettier-ignore
+
+      if (count === 0) {
+        return scratch;
+      }
 
       void this.read(dataPtr, scratch);
 
@@ -1660,8 +1668,12 @@ class Memory {
     const dataPtr = this.u64(address);
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n);
-      const scratch = new Int16Array(count);
+      const count = this.u32(address + 0x08n),
+            scratch = new Int16Array(count); // prettier-ignore
+
+      if (count === 0) {
+        return scratch;
+      }
 
       void this.read(dataPtr, scratch);
 
@@ -1694,8 +1706,12 @@ class Memory {
     const dataPtr = this.u64(address);
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n);
-      const scratch = new Int32Array(count);
+      const count = this.u32(address + 0x08n),
+            scratch = new Int32Array(count); // prettier-ignore
+
+      if (count === 0) {
+        return scratch;
+      }
 
       void this.read(dataPtr, scratch);
 
@@ -1728,8 +1744,12 @@ class Memory {
     const dataPtr = this.u64(address);
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n);
-      const scratch = new BigInt64Array(count);
+      const count = this.u32(address + 0x08n),
+            scratch = new BigInt64Array(count); // prettier-ignore
+
+      if (count === 0) {
+        return scratch;
+      }
 
       void this.read(dataPtr, scratch);
 
@@ -1762,8 +1782,12 @@ class Memory {
     const dataPtr = this.u64(address);
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n);
-      const scratch = new Int8Array(count);
+      const count = this.u32(address + 0x08n),
+            scratch = new Int8Array(count); // prettier-ignore
+
+      if (count === 0) {
+        return scratch;
+      }
 
       void this.read(dataPtr, scratch);
 
@@ -1798,8 +1822,8 @@ class Memory {
     const dataPtr = this.u64(address);
 
     if (typeof dataSizeOrValues === 'number') {
-      const dataSize = dataSizeOrValues;
-      const count = this.u32(address + 0x08n);
+      const count = this.u32(address + 0x08n),
+            dataSize = dataSizeOrValues; // prettier-ignore
 
       if (count === 0) {
         return [];
@@ -1852,8 +1876,12 @@ class Memory {
     const dataPtr = this.u64(address);
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n);
-      const scratch = new Uint16Array(count);
+      const count = this.u32(address + 0x08n),
+            scratch = new Uint16Array(count); // prettier-ignore
+
+      if (count === 0) {
+        return scratch;
+      }
 
       void this.read(dataPtr, scratch);
 
@@ -1886,8 +1914,12 @@ class Memory {
     const dataPtr = this.u64(address);
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n);
-      const scratch = new Uint32Array(count);
+      const count = this.u32(address + 0x08n),
+            scratch = new Uint32Array(count); // prettier-ignore
+
+      if (count === 0) {
+        return scratch;
+      }
 
       void this.read(dataPtr, scratch);
 
@@ -1920,8 +1952,12 @@ class Memory {
     const dataPtr = this.u64(address);
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n);
-      const scratch = new BigUint64Array(count);
+      const count = this.u32(address + 0x08n),
+            scratch = new BigUint64Array(count); // prettier-ignore
+
+      if (count === 0) {
+        return scratch;
+      }
 
       void this.read(dataPtr, scratch);
 
@@ -1954,8 +1990,12 @@ class Memory {
     const dataPtr = this.u64(address);
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n);
-      const scratch = new Uint8Array(count);
+      const count = this.u32(address + 0x08n),
+            scratch = new Uint8Array(count); // prettier-ignore
+
+      if (count === 0) {
+        return scratch;
+      }
 
       void this.read(dataPtr, scratch);
 
