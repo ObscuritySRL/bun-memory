@@ -1994,6 +1994,40 @@ class Memory {
   }
 
   /**
+   * Reads or writes a TArray (Data at 0x00, Count at 0x08, Max at 0x0c) as a BigUint64Array.
+   * @param address Address of the TArray structure.
+   * @param values Optional BigUint64Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns A BigUint64Array containing the elements, or this instance if writing.
+   * @example
+   * ```ts
+   * const rl = new Memory('RocketLeague.exe');
+   * const myArray = rl.tArray(0x12345678n);
+   * rl.tArray(0x12345678n, new BigUint64Array([1n, 2n, 3n]));
+   * ```
+   */
+  public tArray(address: bigint): BigUint64Array;
+  public tArray(address: bigint, values: BigUint64Array, force?: boolean): this;
+  public tArray(address: bigint, values?: BigUint64Array, force?: boolean): BigUint64Array | this {
+    const dataPtr = this.u64(address);
+
+    if (values === undefined) {
+      const count = this.u32(address + 0x08n);
+      const scratch = new BigUint64Array(count);
+
+      void this.read(dataPtr, scratch);
+
+      return scratch;
+    }
+
+    this.u32(address + 0x08n, values.length, force);
+
+    void this.write(dataPtr, values, force);
+
+    return this;
+  }
+
+  /**
    * Reads or writes a Vector2 (object with x, y).
    * @param address Address to access.
    * @param value Optional Vector2 to write.
