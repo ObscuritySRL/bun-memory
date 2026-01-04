@@ -159,7 +159,6 @@ class Memory {
   private readonly Scratch1080 = Buffer.allocUnsafe(0x438 /* sizeof(MODULEENTRY32W) */);
 
   private static TextDecoderUTF8 = new TextDecoder('utf-8');
-
   private static TextEncoderUTF8 = new TextEncoder('utf-8');
 
   private readonly hProcess: bigint;
@@ -1534,6 +1533,455 @@ class Memory {
   }
 
   /**
+   * Reads or writes a TArray (Data at 0x00, Count at 0x08, Max at 0x0c) as an Int16Array.
+   * @param address Address of the TArray structure.
+   * @param values Optional Int16Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns An Int16Array containing the elements, or this instance if writing.
+   * @example
+   * ```ts
+   * const rl = new Memory('RocketLeague.exe');
+   * const myArray = rl.tArrayI16(0x12345678n);
+   * rl.tArrayI16(0x12345678n, new Int16Array([1, 2, 3]));
+   * ```
+   */
+  public tArrayI16(address: bigint): Int16Array;
+  public tArrayI16(address: bigint, values: Int16Array, force?: boolean): this;
+  public tArrayI16(address: bigint, values?: Int16Array, force?: boolean): Int16Array | this {
+    const dataPtr = this.u64(address);
+
+    if (values === undefined) {
+      const count = this.u32(address + 0x08n);
+      const scratch = new Int16Array(count);
+
+      void this.read(dataPtr, scratch);
+
+      return scratch;
+    }
+
+    this.u32(address + 0x08n, values.length, force);
+
+    void this.write(dataPtr, values, force);
+
+    return this;
+  }
+
+  /**
+   * Reads or writes a TArray (Data at 0x00, Count at 0x08, Max at 0x0c) as an Int32Array.
+   * @param address Address of the TArray structure.
+   * @param values Optional Int32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns An Int32Array containing the elements, or this instance if writing.
+   * @example
+   * ```ts
+   * const rl = new Memory('RocketLeague.exe');
+   * const myArray = rl.tArrayI32(0x12345678n);
+   * rl.tArrayI32(0x12345678n, new Int32Array([1, 2, 3]));
+   * ```
+   */
+  public tArrayI32(address: bigint): Int32Array;
+  public tArrayI32(address: bigint, values: Int32Array, force?: boolean): this;
+  public tArrayI32(address: bigint, values?: Int32Array, force?: boolean): Int32Array | this {
+    const dataPtr = this.u64(address);
+
+    if (values === undefined) {
+      const count = this.u32(address + 0x08n);
+      const scratch = new Int32Array(count);
+
+      void this.read(dataPtr, scratch);
+
+      return scratch;
+    }
+
+    this.u32(address + 0x08n, values.length, force);
+
+    void this.write(dataPtr, values, force);
+
+    return this;
+  }
+
+  /**
+   * Reads or writes a TArray (Data at 0x00, Count at 0x08, Max at 0x0c) as a BigInt64Array.
+   * @param address Address of the TArray structure.
+   * @param values Optional BigInt64Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns A BigInt64Array containing the elements, or this instance if writing.
+   * @example
+   * ```ts
+   * const rl = new Memory('RocketLeague.exe');
+   * const myArray = rl.tArrayI64(0x12345678n);
+   * rl.tArrayI64(0x12345678n, new BigInt64Array([1n, 2n, 3n]));
+   * ```
+   */
+  public tArrayI64(address: bigint): BigInt64Array;
+  public tArrayI64(address: bigint, values: BigInt64Array, force?: boolean): this;
+  public tArrayI64(address: bigint, values?: BigInt64Array, force?: boolean): BigInt64Array | this {
+    const dataPtr = this.u64(address);
+
+    if (values === undefined) {
+      const count = this.u32(address + 0x08n);
+      const scratch = new BigInt64Array(count);
+
+      void this.read(dataPtr, scratch);
+
+      return scratch;
+    }
+
+    this.u32(address + 0x08n, values.length, force);
+
+    void this.write(dataPtr, values, force);
+
+    return this;
+  }
+
+  /**
+   * Reads or writes a TArray (Data at 0x00, Count at 0x08, Max at 0x0c) as a Float32Array.
+   * @param address Address of the TArray structure.
+   * @param values Optional Float32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns A Float32Array containing the elements, or this instance if writing.
+   * @example
+   * ```ts
+   * const rl = new Memory('RocketLeague.exe');
+   * const myArray = rl.tArrayF32(0x12345678n);
+   * rl.tArrayF32(0x12345678n, new Float32Array([1.0, 2.0, 3.0]));
+   * ```
+   */
+  public tArrayF32(address: bigint): Float32Array;
+  public tArrayF32(address: bigint, values: Float32Array, force?: boolean): this;
+  public tArrayF32(address: bigint, values?: Float32Array, force?: boolean): Float32Array | this {
+    const dataPtr = this.u64(address);
+
+    if (values === undefined) {
+      const count = this.u32(address + 0x08n);
+      const scratch = new Float32Array(count);
+
+      void this.read(dataPtr, scratch);
+
+      return scratch;
+    }
+
+    this.u32(address + 0x08n, values.length, force);
+
+    void this.write(dataPtr, values, force);
+
+    return this;
+  }
+
+  /**
+   * Reads or writes a TArray (Data at 0x00, Count at 0x08, Max at 0x0c) as a Float64Array.
+   * @param address Address of the TArray structure.
+   * @param values Optional Float64Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns A Float64Array containing the elements, or this instance if writing.
+   * @example
+   * ```ts
+   * const rl = new Memory('RocketLeague.exe');
+   * const myArray = rl.tArrayF64(0x12345678n);
+   * rl.tArrayF64(0x12345678n, new Float64Array([1.0, 2.0, 3.0]));
+   * ```
+   */
+  public tArrayF64(address: bigint): Float64Array;
+  public tArrayF64(address: bigint, values: Float64Array, force?: boolean): this;
+  public tArrayF64(address: bigint, values?: Float64Array, force?: boolean): Float64Array | this {
+    const dataPtr = this.u64(address);
+
+    if (values === undefined) {
+      const count = this.u32(address + 0x08n);
+      const scratch = new Float64Array(count);
+
+      void this.read(dataPtr, scratch);
+
+      return scratch;
+    }
+
+    this.u32(address + 0x08n, values.length, force);
+
+    void this.write(dataPtr, values, force);
+
+    return this;
+  }
+
+  /**
+   * Reads or writes a TArray (Data at 0x00, Count at 0x08, Max at 0x0c) as an Int8Array.
+   * @param address Address of the TArray structure.
+   * @param values Optional Int8Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns An Int8Array containing the elements, or this instance if writing.
+   * @example
+   * ```ts
+   * const rl = new Memory('RocketLeague.exe');
+   * const myArray = rl.tArrayI8(0x12345678n);
+   * rl.tArrayI8(0x12345678n, new Int8Array([1, 2, 3]));
+   * ```
+   */
+  public tArrayI8(address: bigint): Int8Array;
+  public tArrayI8(address: bigint, values: Int8Array, force?: boolean): this;
+  public tArrayI8(address: bigint, values?: Int8Array, force?: boolean): Int8Array | this {
+    const dataPtr = this.u64(address);
+
+    if (values === undefined) {
+      const count = this.u32(address + 0x08n);
+      const scratch = new Int8Array(count);
+
+      void this.read(dataPtr, scratch);
+
+      return scratch;
+    }
+
+    this.u32(address + 0x08n, values.length, force);
+
+    void this.write(dataPtr, values, force);
+
+    return this;
+  }
+
+  /**
+   * Reads or writes a TArray (Data at 0x00, Count at 0x08, Max at 0x0c) as a Uint16Array.
+   * @param address Address of the TArray structure.
+   * @param values Optional Uint16Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns A Uint16Array containing the elements, or this instance if writing.
+   * @example
+   * ```ts
+   * const rl = new Memory('RocketLeague.exe');
+   * const myArray = rl.tArrayU16(0x12345678n);
+   * rl.tArrayU16(0x12345678n, new Uint16Array([1, 2, 3]));
+   * ```
+   */
+  public tArrayU16(address: bigint): Uint16Array;
+  public tArrayU16(address: bigint, values: Uint16Array, force?: boolean): this;
+  public tArrayU16(address: bigint, values?: Uint16Array, force?: boolean): Uint16Array | this {
+    const dataPtr = this.u64(address);
+
+    if (values === undefined) {
+      const count = this.u32(address + 0x08n);
+      const scratch = new Uint16Array(count);
+
+      void this.read(dataPtr, scratch);
+
+      return scratch;
+    }
+
+    this.u32(address + 0x08n, values.length, force);
+
+    void this.write(dataPtr, values, force);
+
+    return this;
+  }
+
+  /**
+   * Reads or writes a TArray (Data at 0x00, Count at 0x08, Max at 0x0c) as a Uint32Array.
+   * @param address Address of the TArray structure.
+   * @param values Optional Uint32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns A Uint32Array containing the elements, or this instance if writing.
+   * @example
+   * ```ts
+   * const rl = new Memory('RocketLeague.exe');
+   * const myArray = rl.tArrayU32(0x12345678n);
+   * rl.tArrayU32(0x12345678n, new Uint32Array([1, 2, 3]));
+   * ```
+   */
+  public tArrayU32(address: bigint): Uint32Array;
+  public tArrayU32(address: bigint, values: Uint32Array, force?: boolean): this;
+  public tArrayU32(address: bigint, values?: Uint32Array, force?: boolean): Uint32Array | this {
+    const dataPtr = this.u64(address);
+
+    if (values === undefined) {
+      const count = this.u32(address + 0x08n);
+      const scratch = new Uint32Array(count);
+
+      void this.read(dataPtr, scratch);
+
+      return scratch;
+    }
+
+    this.u32(address + 0x08n, values.length, force);
+
+    void this.write(dataPtr, values, force);
+
+    return this;
+  }
+
+  /**
+   * Reads or writes a TArray (Data at 0x00, Count at 0x08, Max at 0x0c) as a BigUint64Array.
+   * @param address Address of the TArray structure.
+   * @param values Optional BigUint64Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns A BigUint64Array containing the elements, or this instance if writing.
+   * @example
+   * ```ts
+   * const rl = new Memory('RocketLeague.exe');
+   * const myArray = rl.tArrayU64(0x12345678n);
+   * rl.tArrayU64(0x12345678n, new BigUint64Array([1n, 2n, 3n]));
+   * ```
+   */
+  public tArrayU64(address: bigint): BigUint64Array;
+  public tArrayU64(address: bigint, values: BigUint64Array, force?: boolean): this;
+  public tArrayU64(address: bigint, values?: BigUint64Array, force?: boolean): BigUint64Array | this {
+    const dataPtr = this.u64(address);
+
+    if (values === undefined) {
+      const count = this.u32(address + 0x08n);
+      const scratch = new BigUint64Array(count);
+
+      void this.read(dataPtr, scratch);
+
+      return scratch;
+    }
+
+    this.u32(address + 0x08n, values.length, force);
+
+    void this.write(dataPtr, values, force);
+
+    return this;
+  }
+
+  /**
+   * Reads or writes a TArray (Data at 0x00, Count at 0x08, Max at 0x0c) as a Uint8Array.
+   * @param address Address of the TArray structure.
+   * @param values Optional Uint8Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns A Uint8Array containing the elements, or this instance if writing.
+   * @example
+   * ```ts
+   * const rl = new Memory('RocketLeague.exe');
+   * const myArray = rl.tArrayU8(0x12345678n);
+   * rl.tArrayU8(0x12345678n, new Uint8Array([1, 2, 3]));
+   * ```
+   */
+  public tArrayU8(address: bigint): Uint8Array;
+  public tArrayU8(address: bigint, values: Uint8Array, force?: boolean): this;
+  public tArrayU8(address: bigint, values?: Uint8Array, force?: boolean): Uint8Array | this {
+    const dataPtr = this.u64(address);
+
+    if (values === undefined) {
+      const count = this.u32(address + 0x08n);
+      const scratch = new Uint8Array(count);
+
+      void this.read(dataPtr, scratch);
+
+      return scratch;
+    }
+
+    this.u32(address + 0x08n, values.length, force);
+
+    void this.write(dataPtr, values, force);
+
+    return this;
+  }
+
+  /**
+   * Reads or writes a TArray (Data at 0x00, Count at 0x08, Max at 0x0c) as a BigUint64Array.
+   * @param address Address of the TArray structure.
+   * @param values Optional BigUint64Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns A BigUint64Array containing the elements, or this instance if writing.
+   * @example
+   * ```ts
+   * const rl = new Memory('RocketLeague.exe');
+   * const myArray = rl.tArrayUPtr(0x12345678n);
+   * rl.tArrayUPtr(0x12345678n, new BigUint64Array([1n, 2n, 3n]));
+   * ```
+   */
+  public tArrayUPtr(address: bigint): BigUint64Array;
+  public tArrayUPtr(address: bigint, values: BigUint64Array, force?: boolean): this;
+  public tArrayUPtr(address: bigint, values?: BigUint64Array, force?: boolean): BigUint64Array | this {
+    // TypeScript is funny sometimes, isn't it?… 🫠…
+    if (values === undefined) {
+      return this.tArrayU64(address);
+    }
+
+    return this.tArrayU64(address, values, force);
+  }
+
+  /**
+   * Reads or writes a TArray (Data at 0x00, Count at 0x08, Max at 0x0c) as a UTF-8 string.
+   * @param address Address of the TArray structure.
+   * @param value Optional string to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns The string, or this instance if writing.
+   * @example
+   * ```ts
+   * const rl = new Memory('RocketLeague.exe');
+   * const myString = rl.tArrayChar(0x12345678n);
+   * rl.tArrayChar(0x12345678n, 'hello');
+   * ```
+   */
+  public tArrayChar(address: bigint): string;
+  public tArrayChar(address: bigint, value: string, force?: boolean): this;
+  public tArrayChar(address: bigint, value?: string, force?: boolean): string | this {
+    const dataPtr = this.u64(address);
+
+    if (value === undefined) {
+      const count = this.u32(address + 0x08n);
+
+      if (count === 0x00) {
+        return '';
+      }
+
+      const scratch = Buffer.allocUnsafe(count - 0x01);
+
+      void this.read(dataPtr, scratch);
+
+      return scratch.toString('utf8');
+    }
+
+    const scratch = Buffer.from(value, 'utf8');
+
+    this.u32(address + 0x08n, scratch.length + 0x01, force);
+
+    void this.write(dataPtr, scratch, force);
+
+    return this;
+  }
+
+  /**
+   * Reads or writes a TArray (Data at 0x00, Count at 0x08, Max at 0x0c) as a UTF-16LE string.
+   * This is the format used by FName/FString in Unreal Engine.
+   * @param address Address of the TArray structure.
+   * @param value Optional string to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns The string, or this instance if writing.
+   * @example
+   * ```ts
+   * const rl = new Memory('RocketLeague.exe');
+   * const myString = rl.tArrayWChar(0x12345678n);
+   * rl.tArrayWChar(0x12345678n, 'hello');
+   * ```
+   */
+  public tArrayWChar(address: bigint): string;
+  public tArrayWChar(address: bigint, value: string, force?: boolean): this;
+  public tArrayWChar(address: bigint, value?: string, force?: boolean): string | this {
+    const dataPtr = this.u64(address);
+
+    if (value === undefined) {
+      const count = this.u32(address + 0x08n);
+
+      if (count === 0) {
+        return '';
+      }
+
+      const scratch = Buffer.allocUnsafe((count - 0x01) * 0x02);
+
+      void this.read(dataPtr, scratch);
+
+      return scratch.toString('utf16le');
+    }
+
+    const scratch = Buffer.allocUnsafe(value.length * 0x02);
+
+    scratch.write(value, 0, 'utf16le');
+
+    this.u32(address + 0x08n, value.length + 0x01, force);
+
+    void this.write(dataPtr, scratch, force);
+
+    return this;
+  }
+
+  /**
    * Reads or writes a 16-bit unsigned integer.
    * @param address Address to access.
    * @param value Optional value to write.
@@ -1989,40 +2437,6 @@ class Memory {
     this.u32(address, values.length, force);
 
     void this.write(elementsPtr, values, force);
-
-    return this;
-  }
-
-  /**
-   * Reads or writes a TArray (Data at 0x00, Count at 0x08, Max at 0x0c) as a BigUint64Array.
-   * @param address Address of the TArray structure.
-   * @param values Optional BigUint64Array to write.
-   * @param force When writing, if true temporarily changes page protection to allow the write.
-   * @returns A BigUint64Array containing the elements, or this instance if writing.
-   * @example
-   * ```ts
-   * const rl = new Memory('RocketLeague.exe');
-   * const myArray = rl.tArray(0x12345678n);
-   * rl.tArray(0x12345678n, new BigUint64Array([1n, 2n, 3n]));
-   * ```
-   */
-  public tArray(address: bigint): BigUint64Array;
-  public tArray(address: bigint, values: BigUint64Array, force?: boolean): this;
-  public tArray(address: bigint, values?: BigUint64Array, force?: boolean): BigUint64Array | this {
-    const dataPtr = this.u64(address);
-
-    if (values === undefined) {
-      const count = this.u32(address + 0x08n);
-      const scratch = new BigUint64Array(count);
-
-      void this.read(dataPtr, scratch);
-
-      return scratch;
-    }
-
-    this.u32(address + 0x08n, values.length, force);
-
-    void this.write(dataPtr, values, force);
 
     return this;
   }
