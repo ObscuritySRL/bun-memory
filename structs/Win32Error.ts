@@ -69,7 +69,7 @@ class Win32Error extends Error {
       Win32Error.formatMessageWCache.set(code, message);
     }
 
-    super(`${what} failed (${code}): ${message}`);
+    super(`${what} failed (${code}): ${message!}`);
 
     this.code = code;
     this.name = 'Win32Error';
