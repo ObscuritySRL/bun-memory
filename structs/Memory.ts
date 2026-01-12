@@ -307,7 +307,7 @@ class Memory {
       throw new Win32Error('VirtualProtectEx', Kernel32.GetLastError());
     }
 
-    return Scratch4Uint32Array[0x00];
+    return Scratch4Uint32Array[0x00]!;
   }
 
   /**
@@ -468,7 +468,7 @@ class Memory {
     const { Scratch1 } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch1)[0x00] !== 0;
+      return this.read(address, Scratch1)[0x00]! !== 0;
     }
 
     Scratch1[0x00] = value ? 0x01 : 0x00;
@@ -564,7 +564,7 @@ class Memory {
     const { Scratch4Float32Array } = this; // prettier-ignore
 
     if (value === undefined) {
-      return this.read(address, Scratch4Float32Array)[0x00];
+      return this.read(address, Scratch4Float32Array)[0x00]!;
     }
 
     Scratch4Float32Array[0x00] = value;
@@ -625,7 +625,7 @@ class Memory {
     const { Scratch8Float64Array } = this; // prettier-ignore
 
     if (value === undefined) {
-      return this.read(address, Scratch8Float64Array)[0x00];
+      return this.read(address, Scratch8Float64Array)[0x00]!;
     }
 
     Scratch8Float64Array[0x00] = value;
@@ -686,7 +686,7 @@ class Memory {
     const { Scratch2Int16Array } = this; // prettier-ignore
 
     if (value === undefined) {
-      return this.read(address, Scratch2Int16Array)[0x00];
+      return this.read(address, Scratch2Int16Array)[0x00]!;
     }
 
     Scratch2Int16Array[0x00] = value;
@@ -747,7 +747,7 @@ class Memory {
     const { Scratch4Int32Array } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch4Int32Array)[0x00];
+      return this.read(address, Scratch4Int32Array)[0x00]!;
     }
 
     Scratch4Int32Array[0x00] = value;
@@ -808,7 +808,7 @@ class Memory {
     const { Scratch8BigInt64Array } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch8BigInt64Array)[0x00];
+      return this.read(address, Scratch8BigInt64Array)[0x00]!;
     }
 
     Scratch8BigInt64Array[0x00] = value;
@@ -869,7 +869,7 @@ class Memory {
     const { Scratch1Int8Array } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch1Int8Array)[0x00];
+      return this.read(address, Scratch1Int8Array)[0x00]!;
     }
 
     Scratch1Int8Array[0x00] = value;
@@ -1031,8 +1031,8 @@ class Memory {
     if (value === undefined) {
       void this.read(address, Scratch8Float32Array);
 
-      const x = Scratch8Float32Array[0x00],
-            y = Scratch8Float32Array[0x01]; // prettier-ignore
+      const x = Scratch8Float32Array[0x00]!,
+            y = Scratch8Float32Array[0x01]!; // prettier-ignore
 
       return { x, y };
     }
@@ -1070,8 +1070,8 @@ class Memory {
       const result = new Array<Vector2>(length);
 
       for (let i = 0, j = 0; i < length; i++, j += 0x02) {
-        const x = scratch[j],
-              y = scratch[j + 0x01]; // prettier-ignore
+        const x = scratch[j]!,
+              y = scratch[j + 0x01]!; // prettier-ignore
 
         result[i] = { x, y };
       }
@@ -1083,7 +1083,7 @@ class Memory {
     const scratch = new Float32Array(values.length * 0x02);
 
     for (let i = 0, j = 0; i < values.length; i++, j += 0x02) {
-      const vector2 = values[i];
+      const vector2 = values[i]!;
 
       scratch[j] = vector2.x;
       scratch[j + 0x01] = vector2.y;
@@ -1143,9 +1143,9 @@ class Memory {
     if (value === undefined) {
       void this.read(address, Scratch12Float32Array);
 
-      const pitch = Scratch12Float32Array[0x00],
-            roll  = Scratch12Float32Array[0x02],
-            yaw   = Scratch12Float32Array[0x01]; // prettier-ignore
+      const pitch = Scratch12Float32Array[0x00]!,
+            roll  = Scratch12Float32Array[0x02]!,
+            yaw   = Scratch12Float32Array[0x01]!; // prettier-ignore
 
       return { pitch, roll, yaw };
     }
@@ -1183,9 +1183,9 @@ class Memory {
       const result = new Array<QAngle>(length);
 
       for (let i = 0, j = 0; i < length; i++, j += 0x03) {
-        const pitch = scratch[j],
-              yaw   = scratch[j + 0x01],
-              roll  = scratch[j + 0x02]; // prettier-ignore
+        const pitch = scratch[j]!,
+              yaw   = scratch[j + 0x01]!,
+              roll  = scratch[j + 0x02]!; // prettier-ignore
 
         result[i] = { pitch, yaw, roll };
       }
@@ -1197,7 +1197,7 @@ class Memory {
     const scratch = new Float32Array(values.length * 0x03);
 
     for (let i = 0, j = 0; i < values.length; i++, j += 0x03) {
-      const qAngle = values[i];
+      const qAngle = values[i]!;
 
       scratch[j] = qAngle.pitch;
       scratch[j + 0x02] = qAngle.roll;
@@ -1259,10 +1259,10 @@ class Memory {
     if (value === undefined) {
       void this.read(address, Scratch16Float32Array);
 
-      const w = Scratch16Float32Array[0x03],
-            x = Scratch16Float32Array[0x00],
-            y = Scratch16Float32Array[0x01],
-            z = Scratch16Float32Array[0x02]; // prettier-ignore
+      const w = Scratch16Float32Array[0x03]!,
+            x = Scratch16Float32Array[0x00]!,
+            y = Scratch16Float32Array[0x01]!,
+            z = Scratch16Float32Array[0x02]!; // prettier-ignore
 
       return { w, x, y, z };
     }
@@ -1302,10 +1302,10 @@ class Memory {
       const result = new Array<Quaternion>(length);
 
       for (let i = 0, j = 0; i < length; i++, j += 0x04) {
-        const w = scratch[j + 0x03];
-        const x = scratch[j];
-        const y = scratch[j + 0x01];
-        const z = scratch[j + 0x02];
+        const w = scratch[j + 0x03]!;
+        const x = scratch[j]!;
+        const y = scratch[j + 0x01]!;
+        const z = scratch[j + 0x02]!;
 
         result[i] = { w, x, y, z };
       }
@@ -1317,7 +1317,7 @@ class Memory {
     const scratch = new Float32Array(values.length * 0x04);
 
     for (let i = 0, j = 0; i < values.length; i++, j += 0x04) {
-      const quaternion = values[i];
+      const quaternion = values[i]!;
 
       scratch[j + 0x03] = quaternion.w;
       scratch[j] = quaternion.x;
@@ -1380,9 +1380,9 @@ class Memory {
     if (value === undefined) {
       void this.read(address, Scratch3);
 
-      const r = Scratch3[0x00],
-            g = Scratch3[0x01],
-            b = Scratch3[0x02]; // prettier-ignore
+      const r = Scratch3[0x00]!,
+            g = Scratch3[0x01]!,
+            b = Scratch3[0x02]!; // prettier-ignore
 
       return { r, g, b };
     }
@@ -1446,10 +1446,10 @@ class Memory {
     if (value === undefined) {
       void this.read(address, Scratch4);
 
-      const r = Scratch4[0x00],
-            g = Scratch4[0x01],
-            b = Scratch4[0x02],
-            a = Scratch4[0x03]; // prettier-ignore
+      const r = Scratch4[0x00]!,
+            g = Scratch4[0x01]!,
+            b = Scratch4[0x02]!,
+            a = Scratch4[0x03]!; // prettier-ignore
 
       return { r, g, b, a };
     }
@@ -1843,11 +1843,17 @@ class Memory {
     }
 
     const values = dataSizeOrValues;
-    const dataSize = values[0].length;
+
+    if (values.length === 0) {
+      this.u32(address + 0x08n, 0, force);
+      return this;
+    }
+
+    const dataSize = values[0]!.length;
     const scratch = Buffer.allocUnsafe(values.length * dataSize);
 
     for (let i = 0; i < values.length; i++) {
-      values[i].copy(scratch, i * dataSize);
+      values[i]!.copy(scratch, i * dataSize);
     }
 
     this.u32(address + 0x08n, values.length, force);
@@ -2096,7 +2102,7 @@ class Memory {
     const { Scratch2Uint16Array } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch2Uint16Array)[0x00];
+      return this.read(address, Scratch2Uint16Array)[0x00]!;
     }
 
     Scratch2Uint16Array[0x00] = value;
@@ -2157,7 +2163,7 @@ class Memory {
     const { Scratch4Uint32Array } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch4Uint32Array)[0x00];
+      return this.read(address, Scratch4Uint32Array)[0x00]!;
     }
 
     Scratch4Uint32Array[0x00] = value;
@@ -2218,7 +2224,7 @@ class Memory {
     const { Scratch8BigUint64Array } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch8BigUint64Array)[0x00];
+      return this.read(address, Scratch8BigUint64Array)[0x00]!;
     }
 
     Scratch8BigUint64Array[0x00] = value;
@@ -2279,7 +2285,7 @@ class Memory {
     const { Scratch1 } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch1)[0x00];
+      return this.read(address, Scratch1)[0x00]!;
     }
 
     Scratch1[0x00] = value;
@@ -2393,9 +2399,9 @@ class Memory {
 
     void this.read(address, header);
 
-    const capacity = headerUint16Array[0x01] & 0x7fff;
-    const elementsPtr = headerBigUint64Array[0x00];
-    let   index = headerUint16Array[0x08]; // prettier-ignore
+    const capacity = headerUint16Array[0x01]! & 0x7fff;
+    const elementsPtr = headerBigUint64Array[0x00]!;
+    let   index = headerUint16Array[0x08]!; // prettier-ignore
 
     if (capacity === 0 || capacity <= index || elementsPtr === 0n || index === 0xffff) {
       return new BigUint64Array(0);
@@ -2411,9 +2417,9 @@ class Memory {
     const result = new BigUint64Array(capacity);
 
     while (count < capacity && capacity > index && index !== 0xffff) {
-      result[count++] = scratchBigUint64Array[index * 0x02];
+      result[count++] = scratchBigUint64Array[index * 0x02]!;
 
-      const next = scratchUint16Array[0x05 + index * 0x08];
+      const next = scratchUint16Array[0x05 + index * 0x08]!;
 
       if (index === next || next === 0xffff) {
         break;
@@ -2462,6 +2468,10 @@ class Memory {
 
     this.u32(address, count, force);
 
+    if (count === 0) {
+      return this;
+    }
+
     void this.write(elementsPtr, values, force);
 
     return this;
@@ -2487,8 +2497,11 @@ class Memory {
 
     if (values === undefined) {
       const size = this.u32(address);
-
       const scratch = new Uint32Array(size);
+
+      if (size === 0) {
+        return scratch;
+      }
 
       void this.read(elementsPtr, scratch);
 
@@ -2496,6 +2509,10 @@ class Memory {
     }
 
     this.u32(address, values.length, force);
+
+    if (values.length === 0) {
+      return this;
+    }
 
     void this.write(elementsPtr, values, force);
 
@@ -2522,8 +2539,11 @@ class Memory {
 
     if (values === undefined) {
       const size = this.u32(address);
-
       const scratch = new BigUint64Array(size);
+
+      if (size === 0) {
+        return scratch;
+      }
 
       void this.read(elementsPtr, scratch);
 
@@ -2531,6 +2551,10 @@ class Memory {
     }
 
     this.u32(address, values.length, force);
+
+    if (values.length === 0) {
+      return this;
+    }
 
     void this.write(elementsPtr, values, force);
 
@@ -2635,9 +2659,9 @@ class Memory {
     if (value === undefined) {
       void this.read(address, Scratch12Float32Array);
 
-      const x = Scratch12Float32Array[0x00],
-            y = Scratch12Float32Array[0x01],
-            z = Scratch12Float32Array[0x02]; // prettier-ignore
+      const x = Scratch12Float32Array[0x00]!,
+            y = Scratch12Float32Array[0x01]!,
+            z = Scratch12Float32Array[0x02]!; // prettier-ignore
 
       return { x, y, z };
     }
@@ -2676,9 +2700,9 @@ class Memory {
       const result = new Array<Vector3>(length);
 
       for (let i = 0, j = 0; i < length; i++, j += 0x03) {
-        const x = scratch[j];
-        const y = scratch[j + 0x01];
-        const z = scratch[j + 0x02];
+        const x = scratch[j]!;
+        const y = scratch[j + 0x01]!;
+        const z = scratch[j + 0x02]!;
 
         result[i] = { x, y, z };
       }
@@ -2690,7 +2714,7 @@ class Memory {
     const scratch = new Float32Array(values.length * 0x03);
 
     for (let i = 0, j = 0; i < values.length; i++, j += 0x03) {
-      const vector3 = values[i];
+      const vector3 = values[i]!;
 
       scratch[j] = vector3.x;
       scratch[j + 0x01] = vector3.y;
@@ -2859,17 +2883,23 @@ class Memory {
    * ```
    */
   public follow(address: bigint, offsets: readonly bigint[]): bigint {
-    const last = offsets.length - 1;
+    const length = offsets.length;
+
+    if (length === 0) {
+      return address;
+    }
+
+    const last = length - 1;
 
     for (let i = 0; i < last; i++) {
-      address = this.u64(address + offsets[i]);
+      address = this.u64(address + offsets[i]!);
 
       if (address === 0n) {
         return -1n;
       }
     }
 
-    return address + (offsets[last] ?? 0n);
+    return address + offsets[last]!;
   }
 
   /**

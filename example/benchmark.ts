@@ -69,7 +69,7 @@ for (let i = 0; i < 5; i++) {
 
       // Traverse each of the potential 64 entity chunks…
       for (let k = 0; k < 0x40; k++) {
-        const EntityChunkPtr = EntityListScratch[k];
+        const EntityChunkPtr = EntityListScratch[k]!;
 
         if (EntityChunkPtr === 0n) {
           continue;
@@ -79,13 +79,13 @@ for (let i = 0; i < 5; i++) {
 
         // Traverse the potential 512 entities in that chunk…
         for (let j = 0x00, l = 0x00; j < 0x200; j++, l += 0x0e) {
-          const BaseEntityPtr = EntityChunkScratch[l];
+          const BaseEntityPtr = EntityChunkScratch[l]!;
 
           if (BaseEntityPtr === 0n) {
             continue;
           }
 
-          const EntityClassInfoPtr = EntityChunkScratch[l + 0x01];
+          const EntityClassInfoPtr = EntityChunkScratch[l + 0x01]!;
 
           let Name = EntityClassInfoNames.get(EntityClassInfoPtr);
 
