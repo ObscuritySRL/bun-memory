@@ -142,36 +142,36 @@ class Memory {
    * Pointer values are pre-cached to eliminate property access overhead in hot paths.
    */
   private readonly Scratch1 = new Uint8Array(0x01);
-  private readonly Scratch1Ptr = this.Scratch1.ptr;
   private readonly Scratch1Int8Array = new Int8Array(this.Scratch1.buffer, this.Scratch1.byteOffset, 0x01);
+  private readonly Scratch1Ptr = this.Scratch1.ptr;
 
   private readonly Scratch2 = new Uint8Array(0x02);
-  private readonly Scratch2Ptr = this.Scratch2.ptr;
   private readonly Scratch2Int16Array = new Int16Array(this.Scratch2.buffer, this.Scratch2.byteOffset, 0x01);
+  private readonly Scratch2Ptr = this.Scratch2.ptr;
   private readonly Scratch2Uint16Array = new Uint16Array(this.Scratch2.buffer, this.Scratch2.byteOffset, 0x01);
 
   private readonly Scratch3 = new Uint8Array(0x03);
 
   private readonly Scratch4 = new Uint8Array(0x04);
-  private readonly Scratch4Ptr = this.Scratch4.ptr;
   private readonly Scratch4Float32Array = new Float32Array(this.Scratch4.buffer, this.Scratch4.byteOffset, 0x01);
   private readonly Scratch4Int32Array = new Int32Array(this.Scratch4.buffer, this.Scratch4.byteOffset, 0x01);
+  private readonly Scratch4Ptr = this.Scratch4.ptr;
   private readonly Scratch4Uint32Array = new Uint32Array(this.Scratch4.buffer, this.Scratch4.byteOffset, 0x01);
 
   private readonly Scratch8 = new Uint8Array(0x08);
-  private readonly Scratch8Ptr = this.Scratch8.ptr;
   private readonly Scratch8BigInt64Array = new BigInt64Array(this.Scratch8.buffer, this.Scratch8.byteOffset, 0x01);
   private readonly Scratch8BigUint64Array = new BigUint64Array(this.Scratch8.buffer, this.Scratch8.byteOffset, 0x01);
   private readonly Scratch8Float32Array = new Float32Array(this.Scratch8.buffer, this.Scratch8.byteOffset, 0x02);
   private readonly Scratch8Float64Array = new Float64Array(this.Scratch8.buffer, this.Scratch8.byteOffset, 0x01);
+  private readonly Scratch8Ptr = this.Scratch8.ptr;
 
   private readonly Scratch12 = new Uint8Array(0x0c);
-  private readonly Scratch12Ptr = this.Scratch12.ptr;
   private readonly Scratch12Float32Array = new Float32Array(this.Scratch12.buffer, this.Scratch12.byteOffset, 0x03);
+  private readonly Scratch12Ptr = this.Scratch12.ptr;
 
   private readonly Scratch16 = new Uint8Array(0x10);
-  private readonly Scratch16Ptr = this.Scratch16.ptr;
   private readonly Scratch16Float32Array = new Float32Array(this.Scratch16.buffer, this.Scratch16.byteOffset, 0x04);
+  private readonly Scratch16Ptr = this.Scratch16.ptr;
 
   // Reserved for future remote code execution features
   private readonly _Scratch48 = new Uint8Array([
