@@ -4,6 +4,22 @@ import { CString, ptr } from 'bun:ffi';
 
 import Kernel32, { INVALID_HANDLE_VALUE } from 'bun-kernel32';
 
+const {
+  CloseHandle,
+  CreateToolhelp32Snapshot,
+  GetLastError,
+  Module32FirstW,
+  Module32NextW,
+  OpenProcess,
+  Process32FirstW,
+  Process32NextW,
+  ReadProcessMemory,
+  VirtualAllocEx,
+  VirtualFreeEx,
+  VirtualProtectEx,
+  WriteProcessMemory,
+} = Kernel32;
+
 import type { Module, Point, QAngle, Quaternion, RGB, RGBA, Scratch, UPtr, UPtrArray, Vector2, Vector3, Vector4 } from '../types/Memory';
 import Win32Error from './Win32Error';
 
@@ -43,10 +59,10 @@ class Memory {
     const dwFlags = 0x00000002; /* TH32CS_SNAPPROCESS */
     const th32ProcessID = 0;
 
-    const hSnapshot = Kernel32.CreateToolhelp32Snapshot(dwFlags, th32ProcessID);
+    const hSnapshot = CreateToolhelp32Snapshot(dwFlags, th32ProcessID);
 
     if (hSnapshot === -1n) {
-      throw new Win32Error('CreateToolhelp32Snapshot', Kernel32.GetLastError());
+      throw new Win32Error('CreateToolhelp32Snapshot', GetLastError());
     }
 
     const lppeBuffer = Buffer.allocUnsafe(0x238 /* sizeof(PROCESSENTRY32) */);
@@ -54,12 +70,12 @@ class Memory {
 
     const lppe = lppeBuffer.ptr;
 
-    const bProcess32FirstW = Kernel32.Process32FirstW(hSnapshot, lppe);
+    const bProcess32FirstW = Process32FirstW(hSnapshot, lppe);
 
     if (!bProcess32FirstW) {
-      Kernel32.CloseHandle(hSnapshot);
+      CloseHandle(hSnapshot);
 
-      throw new Win32Error('Process32FirstW', Kernel32.GetLastError());
+      throw new Win32Error('Process32FirstW', GetLastError());
     }
 
     do {
@@ -76,12 +92,12 @@ class Memory {
       const desiredAccess = 0x001f0fff; /* PROCESS_ALL_ACCESS */
       const inheritHandle = 0;
 
-      const hProcess = Kernel32.OpenProcess(desiredAccess, inheritHandle, th32ProcessID);
+      const hProcess = OpenProcess(desiredAccess, inheritHandle, th32ProcessID);
 
       if (hProcess === 0n) {
-        Kernel32.CloseHandle(hSnapshot);
+        CloseHandle(hSnapshot);
 
-        throw new Win32Error('OpenProcess', Kernel32.GetLastError());
+        throw new Win32Error('OpenProcess', GetLastError());
       }
 
       this.__modules = {};
@@ -91,12 +107,12 @@ class Memory {
 
       this.refresh();
 
-      Kernel32.CloseHandle(hSnapshot);
+      CloseHandle(hSnapshot);
 
       return;
-    } while (Kernel32.Process32NextW(hSnapshot, lppe));
+    } while (Process32NextW(hSnapshot, lppe));
 
-    Kernel32.CloseHandle(hSnapshot);
+    CloseHandle(hSnapshot);
 
     throw new Error(`Process not found: ${identifier}.`);
   }
@@ -255,10 +271,10 @@ class Memory {
     const flProtect = protect;
     const lpAddress = 0n;
 
-    const lpBaseAddress = Kernel32.VirtualAllocEx(hProcess, lpAddress, dwSize, flAllocationType, flProtect);
+    const lpBaseAddress = VirtualAllocEx(hProcess, lpAddress, dwSize, flAllocationType, flProtect);
 
     if (lpBaseAddress === 0n) {
-      throw new Win32Error('VirtualAllocEx', Kernel32.GetLastError());
+      throw new Win32Error('VirtualAllocEx', GetLastError());
     }
 
     return lpBaseAddress;
@@ -273,7 +289,7 @@ class Memory {
    * ```
    */
   public close(): void {
-    Kernel32.CloseHandle(this.hProcess);
+    CloseHandle(this.hProcess);
 
     return;
   }
@@ -294,10 +310,10 @@ class Memory {
     const dwSize = 0x00n;
     const lpAddress = address;
 
-    const bVirtualFreeEx = !!Kernel32.VirtualFreeEx(hProcess, lpAddress, dwSize, dwFreeType);
+    const bVirtualFreeEx = !!VirtualFreeEx(hProcess, lpAddress, dwSize, dwFreeType);
 
     if (!bVirtualFreeEx) {
-      throw new Win32Error('VirtualFreeEx', Kernel32.GetLastError());
+      throw new Win32Error('VirtualFreeEx', GetLastError());
     }
 
     return;
@@ -327,10 +343,10 @@ class Memory {
     const lpAddress = address;
     const lpflOldProtect = Scratch4Uint32Array.ptr;
 
-    const bVirtualProtectEx = Kernel32.VirtualProtectEx(hProcess, lpAddress, dwSize, flNewProtect, lpflOldProtect);
+    const bVirtualProtectEx = VirtualProtectEx(hProcess, lpAddress, dwSize, flNewProtect, lpflOldProtect);
 
     if (!bVirtualProtectEx) {
-      throw new Win32Error('VirtualProtectEx', Kernel32.GetLastError());
+      throw new Win32Error('VirtualProtectEx', GetLastError());
     }
 
     return Scratch4Uint32Array[0x00]!;
@@ -356,10 +372,10 @@ class Memory {
     const nSize = BigInt(scratch.byteLength);
     const numberOfBytesRead = 0x00n;
 
-    const bReadProcessMemory = Kernel32.ReadProcessMemory(hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesRead);
+    const bReadProcessMemory = ReadProcessMemory(hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesRead);
 
     if (!bReadProcessMemory) {
-      throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      throw new Win32Error('ReadProcessMemory', GetLastError());
     }
 
     return scratch;
@@ -387,8 +403,10 @@ class Memory {
       const lpBuffer = ptr(scratch);
       const nSize = BigInt(byteLength);
 
-      if (!Kernel32.ReadProcessMemory(hProcess, address, lpBuffer, nSize, 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, lpBuffer, nSize, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       return scratch;
@@ -405,8 +423,10 @@ class Memory {
       const size = remaining < chunkSize ? remaining : chunkSize;
       const chunk = scratchU8.subarray(offset, offset + size);
 
-      if (!Kernel32.ReadProcessMemory(hProcess, address + BigInt(offset), chunk.ptr, BigInt(size), 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address + BigInt(offset), chunk.ptr, BigInt(size), 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       offset += size;
@@ -434,21 +454,21 @@ class Memory {
 
     const dwFlags = 0x00000018; /* TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32 */
 
-    const hSnapshot = Kernel32.CreateToolhelp32Snapshot(dwFlags, th32ProcessID)!;
+    const hSnapshot = CreateToolhelp32Snapshot(dwFlags, th32ProcessID)!;
 
     if (hSnapshot === INVALID_HANDLE_VALUE) {
-      throw new Win32Error('CreateToolhelp32Snapshot', Kernel32.GetLastError());
+      throw new Win32Error('CreateToolhelp32Snapshot', GetLastError());
     }
 
     const { Scratch1080: lpme } = this;
     /* */ lpme.writeUInt32LE(0x438 /* sizeof(MODULEENTRY32W) */);
 
-    const bModule32FirstW = Kernel32.Module32FirstW(hSnapshot, ptr(lpme));
+    const bModule32FirstW = Module32FirstW(hSnapshot, ptr(lpme));
 
     if (!bModule32FirstW) {
-      Kernel32.CloseHandle(hSnapshot);
+      CloseHandle(hSnapshot);
 
-      throw new Win32Error('Module32FirstW', Kernel32.GetLastError());
+      throw new Win32Error('Module32FirstW', GetLastError());
     }
 
     const modules: Record<string, Module> = {};
@@ -459,9 +479,9 @@ class Memory {
       const szModule = lpme.toString('utf16le', 0x30, 0x230).replace(ReplaceTrailingNull, '');
 
       modules[szModule] = { base: modBaseAddr, name: szModule, size: modBaseSize };
-    } while (Kernel32.Module32NextW(hSnapshot, ptr(lpme)));
+    } while (Module32NextW(hSnapshot, ptr(lpme)));
 
-    Kernel32.CloseHandle(hSnapshot);
+    CloseHandle(hSnapshot);
 
     this.__modules = modules;
 
@@ -491,10 +511,10 @@ class Memory {
     const numberOfBytesWritten = 0x00n;
 
     if (!force) {
-      const bWriteProcessMemory = Kernel32.WriteProcessMemory(hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesWritten);
+      const bWriteProcessMemory = WriteProcessMemory(hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesWritten);
 
       if (!bWriteProcessMemory) {
-        throw new Win32Error('WriteProcessMemory', Kernel32.GetLastError());
+        throw new Win32Error('WriteProcessMemory', GetLastError());
       }
 
       return this;
@@ -504,26 +524,26 @@ class Memory {
     const flNewProtect = 0x40; /* PAGE_EXECUTE_READWRITE */
     const lpflOldProtect = Buffer.allocUnsafe(0x04);
 
-    const bVirtualProtectEx = Kernel32.VirtualProtectEx(hProcess, lpBaseAddress, dwSize, flNewProtect, lpflOldProtect.ptr);
+    const bVirtualProtectEx = VirtualProtectEx(hProcess, lpBaseAddress, dwSize, flNewProtect, lpflOldProtect.ptr);
 
     if (!bVirtualProtectEx) {
-      throw new Win32Error('VirtualProtectEx', Kernel32.GetLastError());
+      throw new Win32Error('VirtualProtectEx', GetLastError());
     }
 
     try {
-      const bWriteProcessMemory = Kernel32.WriteProcessMemory(hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesWritten);
+      const bWriteProcessMemory = WriteProcessMemory(hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesWritten);
 
       if (!bWriteProcessMemory) {
-        throw new Win32Error('WriteProcessMemory', Kernel32.GetLastError());
+        throw new Win32Error('WriteProcessMemory', GetLastError());
       }
     } finally {
       const flNewProtect2 = lpflOldProtect.readUInt32LE(0x00);
       const lpflOldProtect2 = Buffer.allocUnsafe(0x04);
 
-      const bVirtualProtectEx2 = Kernel32.VirtualProtectEx(hProcess, lpBaseAddress, dwSize, flNewProtect2, lpflOldProtect2.ptr);
+      const bVirtualProtectEx2 = VirtualProtectEx(hProcess, lpBaseAddress, dwSize, flNewProtect2, lpflOldProtect2.ptr);
 
       if (!bVirtualProtectEx2) {
-        throw new Win32Error('VirtualProtectEx', Kernel32.GetLastError());
+        throw new Win32Error('VirtualProtectEx', GetLastError());
       }
     }
 
@@ -549,8 +569,10 @@ class Memory {
     const { hProcess, Scratch1, Scratch1Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch1Ptr, 1n, 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch1Ptr, 0x01n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       return Scratch1[0x00]! !== 0;
@@ -578,8 +600,10 @@ class Memory {
   public bits(address: bigint, startBit: number, bitCount: number): number {
     const { hProcess, Scratch4Ptr, Scratch4Uint32Array } = this;
 
-    if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch4Ptr, 4n, 0n)) {
-      throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+    const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch4Ptr, 0x04n, 0x00n);
+
+    if (!bReadProcessMemory) {
+      throw new Win32Error('ReadProcessMemory', GetLastError());
     }
 
     const mask  = (1 << bitCount) - 1,
@@ -674,8 +698,10 @@ class Memory {
     const { hProcess, Scratch4Float32Array, Scratch4Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch4Ptr, 4n, 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch4Ptr, 0x04n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       return Scratch4Float32Array[0x00]!;
@@ -739,8 +765,10 @@ class Memory {
     const { hProcess, Scratch8Float64Array, Scratch8Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch8Ptr, 8n, 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch8Ptr, 0x08n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       return Scratch8Float64Array[0x00]!;
@@ -804,8 +832,10 @@ class Memory {
     const { hProcess, Scratch2Int16Array, Scratch2Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch2Ptr, 2n, 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch2Ptr, 0x02n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       return Scratch2Int16Array[0x00]!;
@@ -869,8 +899,10 @@ class Memory {
     const { hProcess, Scratch4Int32Array, Scratch4Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch4Ptr, 4n, 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch4Ptr, 0x04n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       return Scratch4Int32Array[0x00]!;
@@ -934,8 +966,10 @@ class Memory {
     const { hProcess, Scratch8BigInt64Array, Scratch8Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch8Ptr, 8n, 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch8Ptr, 0x08n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       return Scratch8BigInt64Array[0x00]!;
@@ -999,8 +1033,10 @@ class Memory {
     const { hProcess, Scratch1Int8Array, Scratch1Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch1Ptr, 1n, 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch1Ptr, 0x01n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       return Scratch1Int8Array[0x00]!;
@@ -1163,8 +1199,10 @@ class Memory {
     const { hProcess, Scratch8Ptr, Scratch8Float32Array } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch8Ptr, 8n, 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch8Ptr, 0x08n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       const x = Scratch8Float32Array[0x00]!,
@@ -1393,8 +1431,10 @@ class Memory {
     const { hProcess, Scratch16Ptr, Scratch16Float32Array } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch16Ptr, 16n, 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch16Ptr, 0x10n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       const w = Scratch16Float32Array[0x03]!,
@@ -2240,8 +2280,10 @@ class Memory {
     const { hProcess, Scratch2Uint16Array, Scratch2Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch2Ptr, 2n, 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch2Ptr, 0x02n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       return Scratch2Uint16Array[0x00]!;
@@ -2305,8 +2347,10 @@ class Memory {
     const { hProcess, Scratch4Uint32Array, Scratch4Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch4Ptr, 4n, 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch4Ptr, 0x04n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       return Scratch4Uint32Array[0x00]!;
@@ -2370,8 +2414,10 @@ class Memory {
     const { hProcess, Scratch8BigUint64Array, Scratch8Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch8Ptr, 8n, 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch8Ptr, 0x08n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       return Scratch8BigUint64Array[0x00]!;
@@ -2435,8 +2481,10 @@ class Memory {
     const { hProcess, Scratch1, Scratch1Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch1Ptr, 1n, 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch1Ptr, 0x01n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       return Scratch1[0x00]!;
@@ -2729,14 +2777,18 @@ class Memory {
   public vFunction(address: bigint, index: number): bigint {
     const { hProcess, Scratch8Ptr, Scratch8BigUint64Array } = this;
 
-    if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch8Ptr, 8n, 0n)) {
-      throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+    const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch8Ptr, 0x08n, 0x00n);
+
+    if (!bReadProcessMemory) {
+      throw new Win32Error('ReadProcessMemory', GetLastError());
     }
 
     const vtablePtr = Scratch8BigUint64Array[0x00]!;
 
-    if (!Kernel32.ReadProcessMemory(hProcess, vtablePtr + BigInt(index * 0x08), Scratch8Ptr, 8n, 0n)) {
-      throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+    const bReadProcessMemory2 = !!ReadProcessMemory(hProcess, vtablePtr + BigInt(index * 0x08), Scratch8Ptr, 0x08n, 0x00n);
+
+    if (!bReadProcessMemory2) {
+      throw new Win32Error('ReadProcessMemory', GetLastError());
     }
 
     return Scratch8BigUint64Array[0x00]!;
@@ -2867,8 +2919,10 @@ class Memory {
     const { hProcess, Scratch12Ptr, Scratch12Float32Array } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch12Ptr, 12n, 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch12Ptr, 0x0cn, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       const x = Scratch12Float32Array[0x00]!,
@@ -3159,8 +3213,10 @@ class Memory {
     const last = length - 1;
 
     for (let i = 0; i < last; i++) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address + offsets[i]!, Scratch8Ptr, 8n, 0n)) {
-        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address + offsets[i]!, Scratch8Ptr, 0x08n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
       address = Scratch8BigUint64Array[0x00]!;
