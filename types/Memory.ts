@@ -1,5 +1,20 @@
 import type { FFIType, Pointer } from 'bun:ffi';
 
+/**
+ * A single hexadecimal character (0-9, a-f, A-F).
+ */
+export type HexChar = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
+
+/**
+ * A wildcard byte pattern that matches any byte.
+ */
+export type PatternWildcard = '**' | '??';
+
+/**
+ * A single byte in a pattern (two hex chars or a wildcard).
+ */
+export type PatternByte = `${HexChar}${HexChar}` | PatternWildcard;
+
 export type CallResult<R extends FFIType> = R extends typeof FFIType.bool
   ? boolean
   : R extends typeof FFIType.f32 | typeof FFIType.f64 | typeof FFIType.i8 | typeof FFIType.i16 | typeof FFIType.i32 | typeof FFIType.u8 | typeof FFIType.u16 | typeof FFIType.u32

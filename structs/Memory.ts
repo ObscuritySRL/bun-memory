@@ -100,6 +100,21 @@ class Memory {
   }
 
   /**
+   * Creates a Memory instance from a process identifier.
+   * @param identifier Process ID or executable name.
+   * @returns A new Memory instance.
+   * @throws If the process cannot be found or opened.
+   * @example
+   * ```ts
+   * const cs2 = Memory.from('cs2.exe');
+   * const byPid = Memory.from(1234);
+   * ```
+   */
+  public static from(identifier: number | string): Memory {
+    return new Memory(identifier);
+  }
+
+  /**
    * Map of loaded modules in the process, keyed by module name.
    * @example
    * ```ts
@@ -107,7 +122,7 @@ class Memory {
    * const mainModule = cs2.modules['cs2.exe'];
    * ```
    */
-  private __modules: { [key: string]: Readonly<Module> };
+  private __modules: Record<string, Module>;
 
   /**
    * Regex patterns for matching hex strings and wildcards in memory scans.
@@ -149,12 +164,14 @@ class Memory {
   private readonly Scratch16 = new Uint8Array(0x10);
   private readonly Scratch16Float32Array = new Float32Array(this.Scratch16.buffer, this.Scratch16.byteOffset, 0x04);
 
-  private readonly Scratch48 = new Uint8Array([
+  // Reserved for future remote code execution features
+  private readonly _Scratch48 = new Uint8Array([
     0x48, 0xb9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x48, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x48, 0x83, 0xec, 0x28, 0xff, 0xd0, 0x48, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x48, 0x83, 0xc4,
     0x28, 0xc3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   ]);
 
-  private readonly Scratch112 = new Uint8Array(0x70);
+  // Reserved for future features
+  private readonly _Scratch112 = new Uint8Array(0x70);
 
   private readonly Scratch1080 = Buffer.allocUnsafe(0x438 /* sizeof(MODULEENTRY32W) */);
 
@@ -340,6 +357,61 @@ class Memory {
   }
 
   /**
+   * Asynchronously reads memory into a buffer.
+   * For large reads (>= 64KB), yields to the event loop between chunks to prevent blocking.
+   * @param address Address to read from.
+   * @param scratch Buffer to fill.
+   * @returns Promise resolving to the filled buffer.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const myBuffer = await cs2.readAsync(0x12345678n, new Uint8Array(0x100000));
+   * ```
+   */
+  public async readAsync<T extends Scratch>(address: bigint, scratch: T): Promise<T> {
+    const { hProcess } = this;
+
+    const byteLength = scratch.byteLength;
+
+    // For small reads, just do it directly
+    if (byteLength < 0x10000) {
+      const lpBuffer = ptr(scratch);
+      const nSize = BigInt(byteLength);
+
+      if (!Kernel32.ReadProcessMemory(hProcess, address, lpBuffer, nSize, 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
+
+      return scratch;
+    }
+
+    // For large reads, chunk and yield to allow event loop processing
+    const chunkSize = 0x10000; // 64KB chunks
+    const scratchU8 = new Uint8Array(scratch.buffer, scratch.byteOffset, byteLength);
+
+    let offset = 0;
+
+    while (offset < byteLength) {
+      const remaining = byteLength - offset;
+      const size = remaining < chunkSize ? remaining : chunkSize;
+      const chunk = scratchU8.subarray(offset, offset + size);
+
+      if (!Kernel32.ReadProcessMemory(hProcess, address + BigInt(offset), chunk.ptr, BigInt(size), 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
+
+      offset += size;
+
+      // Yield to event loop between chunks
+      if (offset < byteLength) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+    }
+
+    return scratch;
+  }
+
+  /**
    * Refreshes the module list for the process.
    * @example
    * ```ts
@@ -370,19 +442,19 @@ class Memory {
       throw new Win32Error('Module32FirstW', Kernel32.GetLastError());
     }
 
-    const modules: Memory['__modules'] = {};
+    const modules: Record<string, Module> = {};
 
     do {
       const modBaseAddr = lpme.readBigUInt64LE(0x18);
       const modBaseSize = lpme.readUInt32LE(0x20);
       const szModule = lpme.toString('utf16le', 0x30, 0x230).replace(ReplaceTrailingNull, '');
 
-      modules[szModule] = Object.freeze({ base: modBaseAddr, name: szModule, size: modBaseSize });
+      modules[szModule] = { base: modBaseAddr, name: szModule, size: modBaseSize };
     } while (Kernel32.Module32NextW(hSnapshot, ptr(lpme)));
 
     Kernel32.CloseHandle(hSnapshot);
 
-    this.__modules = Object.freeze(modules);
+    this.__modules = modules;
 
     return;
   }
@@ -465,10 +537,14 @@ class Memory {
   public bool(address: bigint): boolean;
   public bool(address: bigint, value: boolean, force?: boolean): this;
   public bool(address: bigint, value?: boolean, force?: boolean): boolean | this {
-    const { Scratch1 } = this;
+    const { hProcess, Scratch1 } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch1)[0x00]! !== 0;
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch1.ptr, 1n, 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
+
+      return Scratch1[0x00]! !== 0;
     }
 
     Scratch1[0x00] = value ? 0x01 : 0x00;
@@ -476,6 +552,25 @@ class Memory {
     void this.write(address, Scratch1, force);
 
     return this;
+  }
+
+  /**
+   * Reads specific bits from a 32-bit value.
+   * @param address Address to read from.
+   * @param startBit Starting bit position (0-31).
+   * @param bitCount Number of bits to read (1-32).
+   * @returns The extracted bits as a number.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const flags = cs2.bits(0x12345678n, 4, 8); // Read 8 bits starting at bit 4
+   * ```
+   */
+  public bits(address: bigint, startBit: number, bitCount: number): number {
+    const mask  = (1 << bitCount) - 1,
+          value = this.u32(address); // prettier-ignore
+
+    return (value >> startBit) & mask;
   }
 
   /**
@@ -561,10 +656,14 @@ class Memory {
   public f32(address: bigint): number;
   public f32(address: bigint, value: number, force?: boolean): this;
   public f32(address: bigint, value?: number, force?: boolean): number | this {
-    const { Scratch4Float32Array } = this; // prettier-ignore
+    const { hProcess, Scratch4Float32Array } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch4Float32Array)[0x00]!;
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch4Float32Array.ptr, 4n, 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
+
+      return Scratch4Float32Array[0x00]!;
     }
 
     Scratch4Float32Array[0x00] = value;
@@ -622,10 +721,14 @@ class Memory {
   public f64(address: bigint): number;
   public f64(address: bigint, value: number, force?: boolean): this;
   public f64(address: bigint, value?: number, force?: boolean): number | this {
-    const { Scratch8Float64Array } = this; // prettier-ignore
+    const { hProcess, Scratch8Float64Array } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch8Float64Array)[0x00]!;
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch8Float64Array.ptr, 8n, 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
+
+      return Scratch8Float64Array[0x00]!;
     }
 
     Scratch8Float64Array[0x00] = value;
@@ -683,10 +786,14 @@ class Memory {
   public i16(address: bigint): number;
   public i16(address: bigint, value: number, force?: boolean): this;
   public i16(address: bigint, value?: number, force?: boolean): number | this {
-    const { Scratch2Int16Array } = this; // prettier-ignore
+    const { hProcess, Scratch2Int16Array } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch2Int16Array)[0x00]!;
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch2Int16Array.ptr, 2n, 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
+
+      return Scratch2Int16Array[0x00]!;
     }
 
     Scratch2Int16Array[0x00] = value;
@@ -744,10 +851,14 @@ class Memory {
   public i32(address: bigint): number;
   public i32(address: bigint, value: number, force?: boolean): this;
   public i32(address: bigint, value?: number, force?: boolean): number | this {
-    const { Scratch4Int32Array } = this;
+    const { hProcess, Scratch4Int32Array } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch4Int32Array)[0x00]!;
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch4Int32Array.ptr, 4n, 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
+
+      return Scratch4Int32Array[0x00]!;
     }
 
     Scratch4Int32Array[0x00] = value;
@@ -805,10 +916,14 @@ class Memory {
   public i64(address: bigint): bigint;
   public i64(address: bigint, value: bigint, force?: boolean): this;
   public i64(address: bigint, value?: bigint, force?: boolean): bigint | this {
-    const { Scratch8BigInt64Array } = this;
+    const { hProcess, Scratch8BigInt64Array } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch8BigInt64Array)[0x00]!;
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch8BigInt64Array.ptr, 8n, 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
+
+      return Scratch8BigInt64Array[0x00]!;
     }
 
     Scratch8BigInt64Array[0x00] = value;
@@ -866,10 +981,14 @@ class Memory {
   public i8(address: bigint): number;
   public i8(address: bigint, value: number, force?: boolean): this;
   public i8(address: bigint, value?: number, force?: boolean): number | this {
-    const { Scratch1Int8Array } = this;
+    const { hProcess, Scratch1Int8Array } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch1Int8Array)[0x00]!;
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch1Int8Array.ptr, 1n, 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
+
+      return Scratch1Int8Array[0x00]!;
     }
 
     Scratch1Int8Array[0x00] = value;
@@ -2099,10 +2218,14 @@ class Memory {
   public u16(address: bigint): number;
   public u16(address: bigint, value: number, force?: boolean): this;
   public u16(address: bigint, value?: number, force?: boolean): number | this {
-    const { Scratch2Uint16Array } = this;
+    const { hProcess, Scratch2Uint16Array } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch2Uint16Array)[0x00]!;
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch2Uint16Array.ptr, 2n, 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
+
+      return Scratch2Uint16Array[0x00]!;
     }
 
     Scratch2Uint16Array[0x00] = value;
@@ -2160,10 +2283,14 @@ class Memory {
   public u32(address: bigint): number;
   public u32(address: bigint, value: number, force?: boolean): this;
   public u32(address: bigint, value?: number, force?: boolean): number | this {
-    const { Scratch4Uint32Array } = this;
+    const { hProcess, Scratch4Uint32Array } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch4Uint32Array)[0x00]!;
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch4Uint32Array.ptr, 4n, 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
+
+      return Scratch4Uint32Array[0x00]!;
     }
 
     Scratch4Uint32Array[0x00] = value;
@@ -2221,10 +2348,14 @@ class Memory {
   public u64(address: bigint): bigint;
   public u64(address: bigint, value: bigint, force?: boolean): this;
   public u64(address: bigint, value?: bigint, force?: boolean): bigint | this {
-    const { Scratch8BigUint64Array } = this;
+    const { hProcess, Scratch8BigUint64Array } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch8BigUint64Array)[0x00]!;
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch8BigUint64Array.ptr, 8n, 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
+
+      return Scratch8BigUint64Array[0x00]!;
     }
 
     Scratch8BigUint64Array[0x00] = value;
@@ -2282,10 +2413,14 @@ class Memory {
   public u8(address: bigint): number;
   public u8(address: bigint, value: number, force?: boolean): this;
   public u8(address: bigint, value?: number, force?: boolean): number | this {
-    const { Scratch1 } = this;
+    const { hProcess, Scratch1 } = this;
 
     if (value === undefined) {
-      return this.read(address, Scratch1)[0x00]!;
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch1.ptr, 1n, 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
+
+      return Scratch1[0x00]!;
     }
 
     Scratch1[0x00] = value;
@@ -2562,6 +2697,37 @@ class Memory {
   }
 
   /**
+   * Reads a virtual function pointer from an object's vtable.
+   * @param address Address of the object (pointer to vtable).
+   * @param index Index of the virtual function in the vtable.
+   * @returns The virtual function pointer.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const vfunc = cs2.vFunction(0x12345678n, 5); // Get 6th virtual function
+   * ```
+   */
+  public vFunction(address: bigint, index: number): bigint {
+    const vtablePtr = this.u64(address);
+
+    return this.u64(vtablePtr + BigInt(index * 0x08));
+  }
+
+  /**
+   * Reads the vtable pointer from an object.
+   * @param address Address of the object.
+   * @returns The vtable pointer.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const vtable = cs2.vTable(0x12345678n);
+   * ```
+   */
+  public vTable(address: bigint): bigint {
+    return this.u64(address);
+  }
+
+  /**
    * Reads or writes a Vector2 (object with x, y).
    * @param address Address to access.
    * @param value Optional Vector2 to write.
@@ -2607,6 +2773,21 @@ class Memory {
     }
 
     return this.pointArray(address, lengthOrValues, force);
+  }
+
+  /**
+   * Reads an array of Vector2 as a raw Float32Array (SIMD-friendly).
+   * @param address Address to read from.
+   * @param length Number of Vector2 elements to read.
+   * @returns Float32Array of length * 2 floats.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const raw = cs2.vector2ArrayRaw(0x12345678n, 100); // 200 floats
+   * ```
+   */
+  public vector2ArrayRaw(address: bigint, length: number): Float32Array {
+    return this.f32Array(address, length * 0x02);
   }
 
   /**
@@ -2727,6 +2908,21 @@ class Memory {
   }
 
   /**
+   * Reads an array of Vector3 as a raw Float32Array (SIMD-friendly).
+   * @param address Address to read from.
+   * @param length Number of Vector3 elements to read.
+   * @returns Float32Array of length * 3 floats.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const raw = cs2.vector3ArrayRaw(0x12345678n, 100); // 300 floats
+   * ```
+   */
+  public vector3ArrayRaw(address: bigint, length: number): Float32Array {
+    return this.f32Array(address, length * 0x03);
+  }
+
+  /**
    * Reads or writes a raw Vector3 as a Float32Array.
    * @param address Address to access.
    * @param values Optional Float32Array to write.
@@ -2804,6 +3000,21 @@ class Memory {
   }
 
   /**
+   * Reads an array of Vector4 as a raw Float32Array (SIMD-friendly).
+   * @param address Address to read from.
+   * @param length Number of Vector4 elements to read.
+   * @returns Float32Array of length * 4 floats.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const raw = cs2.vector4ArrayRaw(0x12345678n, 100); // 400 floats
+   * ```
+   */
+  public vector4ArrayRaw(address: bigint, length: number): Float32Array {
+    return this.f32Array(address, length * 0x04);
+  }
+
+  /**
    * Reads or writes a raw Vector4 as a Float32Array.
    * @param address Address to access.
    * @param values Optional Float32Array to write.
@@ -2830,6 +3041,30 @@ class Memory {
     void this.write(address, values, force);
 
     return this;
+  }
+
+  /**
+   * Reads or writes a 4x4 view matrix (Float32Array of length 16).
+   * @param address Address to access.
+   * @param values Optional Float32Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns The matrix at address, or this instance if writing.
+   * @example
+   * ```ts
+   * const cs2 = new Memory('cs2.exe');
+   * const viewMatrix = cs2.viewMatrix(0x12345678n);
+   * cs2.viewMatrix(0x12345678n, new Float32Array(16));
+   * ```
+   */
+  public viewMatrix(address: bigint): Float32Array;
+  public viewMatrix(address: bigint, values: Float32Array, force?: boolean): this;
+  public viewMatrix(address: bigint, values?: Float32Array, force?: boolean): Float32Array | this {
+    // TypeScript is funny sometimes, isn't it?… 🫠…
+    if (values === undefined) {
+      return this.matrix4x4(address);
+    }
+
+    return this.matrix4x4(address, values, force);
   }
 
   /**
