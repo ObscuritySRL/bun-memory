@@ -16,6 +16,8 @@ import Win32Error from './Win32Error';
  *
  * @todo Add support for 32 or 64-bit processes using IsWow64Process2 (Windows 10+).
  * @todo When adding 32-bit support, several u64 will need changed to u64_fast.
+ * @todo Add memory region query using VirtualQueryEx (find next readable region, enumerate regions).
+ * @todo Function hooking - VTable hooks (pointer swaps), IAT hooks (PE parsing), inline hooks (x64 disassembler).
  *
  * @example
  * ```ts
