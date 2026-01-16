@@ -139,31 +139,38 @@ class Memory {
   /**
    * Scratch buffers and typed views for temporary FFI reads/writes.
    * Used internally for efficient memory access and conversions.
+   * Pointer values are pre-cached to eliminate property access overhead in hot paths.
    */
   private readonly Scratch1 = new Uint8Array(0x01);
+  private readonly Scratch1Ptr = this.Scratch1.ptr;
   private readonly Scratch1Int8Array = new Int8Array(this.Scratch1.buffer, this.Scratch1.byteOffset, 0x01);
 
   private readonly Scratch2 = new Uint8Array(0x02);
+  private readonly Scratch2Ptr = this.Scratch2.ptr;
   private readonly Scratch2Int16Array = new Int16Array(this.Scratch2.buffer, this.Scratch2.byteOffset, 0x01);
   private readonly Scratch2Uint16Array = new Uint16Array(this.Scratch2.buffer, this.Scratch2.byteOffset, 0x01);
 
   private readonly Scratch3 = new Uint8Array(0x03);
 
   private readonly Scratch4 = new Uint8Array(0x04);
+  private readonly Scratch4Ptr = this.Scratch4.ptr;
   private readonly Scratch4Float32Array = new Float32Array(this.Scratch4.buffer, this.Scratch4.byteOffset, 0x01);
   private readonly Scratch4Int32Array = new Int32Array(this.Scratch4.buffer, this.Scratch4.byteOffset, 0x01);
   private readonly Scratch4Uint32Array = new Uint32Array(this.Scratch4.buffer, this.Scratch4.byteOffset, 0x01);
 
   private readonly Scratch8 = new Uint8Array(0x08);
+  private readonly Scratch8Ptr = this.Scratch8.ptr;
   private readonly Scratch8BigInt64Array = new BigInt64Array(this.Scratch8.buffer, this.Scratch8.byteOffset, 0x01);
   private readonly Scratch8BigUint64Array = new BigUint64Array(this.Scratch8.buffer, this.Scratch8.byteOffset, 0x01);
   private readonly Scratch8Float32Array = new Float32Array(this.Scratch8.buffer, this.Scratch8.byteOffset, 0x02);
   private readonly Scratch8Float64Array = new Float64Array(this.Scratch8.buffer, this.Scratch8.byteOffset, 0x01);
 
   private readonly Scratch12 = new Uint8Array(0x0c);
+  private readonly Scratch12Ptr = this.Scratch12.ptr;
   private readonly Scratch12Float32Array = new Float32Array(this.Scratch12.buffer, this.Scratch12.byteOffset, 0x03);
 
   private readonly Scratch16 = new Uint8Array(0x10);
+  private readonly Scratch16Ptr = this.Scratch16.ptr;
   private readonly Scratch16Float32Array = new Float32Array(this.Scratch16.buffer, this.Scratch16.byteOffset, 0x04);
 
   // Reserved for future remote code execution features
@@ -539,10 +546,10 @@ class Memory {
   public bool(address: bigint): boolean;
   public bool(address: bigint, value: boolean, force?: boolean): this;
   public bool(address: bigint, value?: boolean, force?: boolean): boolean | this {
-    const { hProcess, Scratch1 } = this;
+    const { hProcess, Scratch1, Scratch1Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch1.ptr, 1n, 0n)) {
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch1Ptr, 1n, 0n)) {
         throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
       }
 
@@ -551,7 +558,7 @@ class Memory {
 
     Scratch1[0x00] = value ? 0x01 : 0x00;
 
-    void this.write(address, Scratch1, force);
+    this.write(address, Scratch1, force);
 
     return this;
   }
@@ -569,8 +576,14 @@ class Memory {
    * ```
    */
   public bits(address: bigint, startBit: number, bitCount: number): number {
+    const { hProcess, Scratch4Ptr, Scratch4Uint32Array } = this;
+
+    if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch4Ptr, 4n, 0n)) {
+      throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+    }
+
     const mask  = (1 << bitCount) - 1,
-          value = this.u32(address); // prettier-ignore
+          value = Scratch4Uint32Array[0x00]!; // prettier-ignore
 
     return (value >> startBit) & mask;
   }
@@ -600,7 +613,7 @@ class Memory {
 
     const value = lengthOrValue;
 
-    void this.write(address, value, force);
+    this.write(address, value, force);
 
     return this;
   }
@@ -624,7 +637,7 @@ class Memory {
     if (typeof lengthOrValue === 'number') {
       const scratch = new Uint8Array(lengthOrValue);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       const indexOf = scratch.indexOf(0x00);
 
@@ -637,7 +650,7 @@ class Memory {
 
     const scratch = Buffer.from(lengthOrValue);
 
-    void this.write(address, scratch, force);
+    this.write(address, scratch, force);
 
     return this;
   }
@@ -658,10 +671,10 @@ class Memory {
   public f32(address: bigint): number;
   public f32(address: bigint, value: number, force?: boolean): this;
   public f32(address: bigint, value?: number, force?: boolean): number | this {
-    const { hProcess, Scratch4Float32Array } = this;
+    const { hProcess, Scratch4Float32Array, Scratch4Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch4Float32Array.ptr, 4n, 0n)) {
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch4Ptr, 4n, 0n)) {
         throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
       }
 
@@ -670,7 +683,7 @@ class Memory {
 
     Scratch4Float32Array[0x00] = value;
 
-    void this.write(address, Scratch4Float32Array, force);
+    this.write(address, Scratch4Float32Array, force);
 
     return this;
   }
@@ -695,14 +708,14 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Float32Array(length);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       return scratch;
     }
 
     const values = lengthOrValues;
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -723,10 +736,10 @@ class Memory {
   public f64(address: bigint): number;
   public f64(address: bigint, value: number, force?: boolean): this;
   public f64(address: bigint, value?: number, force?: boolean): number | this {
-    const { hProcess, Scratch8Float64Array } = this;
+    const { hProcess, Scratch8Float64Array, Scratch8Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch8Float64Array.ptr, 8n, 0n)) {
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch8Ptr, 8n, 0n)) {
         throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
       }
 
@@ -735,7 +748,7 @@ class Memory {
 
     Scratch8Float64Array[0x00] = value;
 
-    void this.write(address, Scratch8Float64Array, force);
+    this.write(address, Scratch8Float64Array, force);
 
     return this;
   }
@@ -760,14 +773,14 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Float64Array(length);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       return scratch;
     }
 
     const values = lengthOrValues;
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -788,10 +801,10 @@ class Memory {
   public i16(address: bigint): number;
   public i16(address: bigint, value: number, force?: boolean): this;
   public i16(address: bigint, value?: number, force?: boolean): number | this {
-    const { hProcess, Scratch2Int16Array } = this;
+    const { hProcess, Scratch2Int16Array, Scratch2Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch2Int16Array.ptr, 2n, 0n)) {
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch2Ptr, 2n, 0n)) {
         throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
       }
 
@@ -800,7 +813,7 @@ class Memory {
 
     Scratch2Int16Array[0x00] = value;
 
-    void this.write(address, Scratch2Int16Array, force);
+    this.write(address, Scratch2Int16Array, force);
 
     return this;
   }
@@ -825,14 +838,14 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Int16Array(length);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       return scratch;
     }
 
     const values = lengthOrValues;
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -853,10 +866,10 @@ class Memory {
   public i32(address: bigint): number;
   public i32(address: bigint, value: number, force?: boolean): this;
   public i32(address: bigint, value?: number, force?: boolean): number | this {
-    const { hProcess, Scratch4Int32Array } = this;
+    const { hProcess, Scratch4Int32Array, Scratch4Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch4Int32Array.ptr, 4n, 0n)) {
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch4Ptr, 4n, 0n)) {
         throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
       }
 
@@ -865,7 +878,7 @@ class Memory {
 
     Scratch4Int32Array[0x00] = value;
 
-    void this.write(address, Scratch4Int32Array, force);
+    this.write(address, Scratch4Int32Array, force);
 
     return this;
   }
@@ -890,14 +903,14 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Int32Array(length);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       return scratch;
     }
 
     const values = lengthOrValues;
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -918,10 +931,10 @@ class Memory {
   public i64(address: bigint): bigint;
   public i64(address: bigint, value: bigint, force?: boolean): this;
   public i64(address: bigint, value?: bigint, force?: boolean): bigint | this {
-    const { hProcess, Scratch8BigInt64Array } = this;
+    const { hProcess, Scratch8BigInt64Array, Scratch8Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch8BigInt64Array.ptr, 8n, 0n)) {
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch8Ptr, 8n, 0n)) {
         throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
       }
 
@@ -930,7 +943,7 @@ class Memory {
 
     Scratch8BigInt64Array[0x00] = value;
 
-    void this.write(address, Scratch8BigInt64Array, force);
+    this.write(address, Scratch8BigInt64Array, force);
 
     return this;
   }
@@ -955,14 +968,14 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new BigInt64Array(length);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       return scratch;
     }
 
     const values = lengthOrValues;
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -983,10 +996,10 @@ class Memory {
   public i8(address: bigint): number;
   public i8(address: bigint, value: number, force?: boolean): this;
   public i8(address: bigint, value?: number, force?: boolean): number | this {
-    const { hProcess, Scratch1Int8Array } = this;
+    const { hProcess, Scratch1Int8Array, Scratch1Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch1Int8Array.ptr, 1n, 0n)) {
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch1Ptr, 1n, 0n)) {
         throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
       }
 
@@ -995,7 +1008,7 @@ class Memory {
 
     Scratch1Int8Array[0x00] = value;
 
-    void this.write(address, Scratch1Int8Array, force);
+    this.write(address, Scratch1Int8Array, force);
 
     return this;
   }
@@ -1020,14 +1033,14 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Int8Array(length);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       return scratch;
     }
 
     const values = lengthOrValues;
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -1051,7 +1064,7 @@ class Memory {
     if (values === undefined) {
       const scratch = new Float32Array(0x09);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       return scratch;
     }
@@ -1060,7 +1073,7 @@ class Memory {
       throw new RangeError('values.length must be 9.');
     }
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -1084,7 +1097,7 @@ class Memory {
     if (values === undefined) {
       const scratch = new Float32Array(0x0c);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       return scratch;
     }
@@ -1093,7 +1106,7 @@ class Memory {
       throw new RangeError('values.length must be 12.');
     }
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -1117,7 +1130,7 @@ class Memory {
     if (values === undefined) {
       const scratch = new Float32Array(0x10);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       return scratch;
     }
@@ -1126,7 +1139,7 @@ class Memory {
       throw new RangeError('values.length must be 16.');
     }
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -1147,10 +1160,12 @@ class Memory {
   public point(address: bigint): Point;
   public point(address: bigint, value: Point, force?: boolean): this;
   public point(address: bigint, value?: Point, force?: boolean): Point | this {
-    const { Scratch8Float32Array } = this;
+    const { hProcess, Scratch8Ptr, Scratch8Float32Array } = this;
 
     if (value === undefined) {
-      void this.read(address, Scratch8Float32Array);
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch8Ptr, 8n, 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
 
       const x = Scratch8Float32Array[0x00]!,
             y = Scratch8Float32Array[0x01]!; // prettier-ignore
@@ -1161,7 +1176,7 @@ class Memory {
     Scratch8Float32Array[0x00] = value.x;
     Scratch8Float32Array[0x01] = value.y;
 
-    void this.write(address, Scratch8Float32Array, force);
+    this.write(address, Scratch8Float32Array, force);
 
     return this;
   }
@@ -1186,7 +1201,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Float32Array(length * 2);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       const result = new Array<Vector2>(length);
 
@@ -1210,7 +1225,7 @@ class Memory {
       scratch[j + 0x01] = vector2.y;
     }
 
-    void this.write(address, scratch, force);
+    this.write(address, scratch, force);
 
     return this;
   }
@@ -1239,7 +1254,7 @@ class Memory {
       throw new RangeError('values.length must be 2.');
     }
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -1262,7 +1277,7 @@ class Memory {
     const { Scratch12Float32Array } = this;
 
     if (value === undefined) {
-      void this.read(address, Scratch12Float32Array);
+      this.read(address, Scratch12Float32Array);
 
       const pitch = Scratch12Float32Array[0x00]!,
             roll  = Scratch12Float32Array[0x02]!,
@@ -1275,7 +1290,7 @@ class Memory {
     Scratch12Float32Array[0x02] = value.roll;
     Scratch12Float32Array[0x01] = value.yaw;
 
-    void this.write(address, Scratch12Float32Array, force);
+    this.write(address, Scratch12Float32Array, force);
 
     return this;
   }
@@ -1299,7 +1314,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Float32Array(length * 0x03);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       const result = new Array<QAngle>(length);
 
@@ -1325,7 +1340,7 @@ class Memory {
       scratch[j + 0x01] = qAngle.yaw;
     }
 
-    void this.write(address, scratch, force);
+    this.write(address, scratch, force);
 
     return this;
   }
@@ -1354,7 +1369,7 @@ class Memory {
       throw new RangeError('values.length must be 3.');
     }
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -1375,10 +1390,12 @@ class Memory {
   public quaternion(address: bigint): Quaternion;
   public quaternion(address: bigint, value: Quaternion, force?: boolean): this;
   public quaternion(address: bigint, value?: Quaternion, force?: boolean): Quaternion | this {
-    const { Scratch16Float32Array } = this;
+    const { hProcess, Scratch16Ptr, Scratch16Float32Array } = this;
 
     if (value === undefined) {
-      void this.read(address, Scratch16Float32Array);
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch16Ptr, 16n, 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
 
       const w = Scratch16Float32Array[0x03]!,
             x = Scratch16Float32Array[0x00]!,
@@ -1393,7 +1410,7 @@ class Memory {
     Scratch16Float32Array[0x01] = value.y;
     Scratch16Float32Array[0x02] = value.z;
 
-    void this.write(address, Scratch16Float32Array, force);
+    this.write(address, Scratch16Float32Array, force);
 
     return this;
   }
@@ -1418,7 +1435,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Float32Array(length * 0x04); // 4 * f32 per Quaternion
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       const result = new Array<Quaternion>(length);
 
@@ -1446,7 +1463,7 @@ class Memory {
       scratch[j + 0x02] = quaternion.z;
     }
 
-    void this.write(address, scratch, force);
+    this.write(address, scratch, force);
 
     return this;
   }
@@ -1475,7 +1492,7 @@ class Memory {
       throw new RangeError('values.length must be 4.');
     }
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -1499,7 +1516,7 @@ class Memory {
     const { Scratch3 } = this;
 
     if (value === undefined) {
-      void this.read(address, Scratch3);
+      this.read(address, Scratch3);
 
       const r = Scratch3[0x00]!,
             g = Scratch3[0x01]!,
@@ -1512,7 +1529,7 @@ class Memory {
     Scratch3[0x01] = value.g;
     Scratch3[0x02] = value.b;
 
-    void this.write(address, Scratch3, force);
+    this.write(address, Scratch3, force);
 
     return this;
   }
@@ -1541,7 +1558,7 @@ class Memory {
       throw new RangeError('values.length must be 3.');
     }
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -1565,7 +1582,7 @@ class Memory {
     const { Scratch4 } = this;
 
     if (value === undefined) {
-      void this.read(address, Scratch4);
+      this.read(address, Scratch4);
 
       const r = Scratch4[0x00]!,
             g = Scratch4[0x01]!,
@@ -1580,7 +1597,7 @@ class Memory {
     Scratch4[0x02] = value.b;
     Scratch4[0x03] = value.a;
 
-    void this.write(address, Scratch4, force);
+    this.write(address, Scratch4, force);
 
     return this;
   }
@@ -1609,7 +1626,7 @@ class Memory {
       throw new RangeError('values.length must be 4.');
     }
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -1635,7 +1652,7 @@ class Memory {
     if (typeof lengthOrValue === 'number') {
       const scratch = new Uint8Array(lengthOrValue);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       const indexOf = scratch.indexOf(0x00);
 
@@ -1648,7 +1665,7 @@ class Memory {
 
     const scratch = Memory.TextEncoderUTF8.encode(lengthOrValue);
 
-    void this.write(address, scratch, force);
+    this.write(address, scratch, force);
 
     return this;
   }
@@ -1680,7 +1697,7 @@ class Memory {
 
       const scratch = Buffer.allocUnsafe(count - 0x01);
 
-      void this.read(dataPtr, scratch);
+      this.read(dataPtr, scratch);
 
       return scratch.toString('utf8');
     }
@@ -1689,7 +1706,7 @@ class Memory {
 
     this.u32(address + 0x08n, scratch.length + 0x01, force);
 
-    void this.write(dataPtr, scratch, force);
+    this.write(dataPtr, scratch, force);
 
     return this;
   }
@@ -1720,14 +1737,14 @@ class Memory {
         return scratch;
       }
 
-      void this.read(dataPtr, scratch);
+      this.read(dataPtr, scratch);
 
       return scratch;
     }
 
     this.u32(address + 0x08n, values.length, force);
 
-    void this.write(dataPtr, values, force);
+    this.write(dataPtr, values, force);
 
     return this;
   }
@@ -1758,14 +1775,14 @@ class Memory {
         return scratch;
       }
 
-      void this.read(dataPtr, scratch);
+      this.read(dataPtr, scratch);
 
       return scratch;
     }
 
     this.u32(address + 0x08n, values.length, force);
 
-    void this.write(dataPtr, values, force);
+    this.write(dataPtr, values, force);
 
     return this;
   }
@@ -1796,14 +1813,14 @@ class Memory {
         return scratch;
       }
 
-      void this.read(dataPtr, scratch);
+      this.read(dataPtr, scratch);
 
       return scratch;
     }
 
     this.u32(address + 0x08n, values.length, force);
 
-    void this.write(dataPtr, values, force);
+    this.write(dataPtr, values, force);
 
     return this;
   }
@@ -1834,14 +1851,14 @@ class Memory {
         return scratch;
       }
 
-      void this.read(dataPtr, scratch);
+      this.read(dataPtr, scratch);
 
       return scratch;
     }
 
     this.u32(address + 0x08n, values.length, force);
 
-    void this.write(dataPtr, values, force);
+    this.write(dataPtr, values, force);
 
     return this;
   }
@@ -1872,14 +1889,14 @@ class Memory {
         return scratch;
       }
 
-      void this.read(dataPtr, scratch);
+      this.read(dataPtr, scratch);
 
       return scratch;
     }
 
     this.u32(address + 0x08n, values.length, force);
 
-    void this.write(dataPtr, values, force);
+    this.write(dataPtr, values, force);
 
     return this;
   }
@@ -1910,14 +1927,14 @@ class Memory {
         return scratch;
       }
 
-      void this.read(dataPtr, scratch);
+      this.read(dataPtr, scratch);
 
       return scratch;
     }
 
     this.u32(address + 0x08n, values.length, force);
 
-    void this.write(dataPtr, values, force);
+    this.write(dataPtr, values, force);
 
     return this;
   }
@@ -1952,7 +1969,7 @@ class Memory {
 
       const scratch = Buffer.allocUnsafe(count * dataSize);
 
-      void this.read(dataPtr, scratch);
+      this.read(dataPtr, scratch);
 
       const result: Buffer[] = new Array(count);
 
@@ -1979,7 +1996,7 @@ class Memory {
 
     this.u32(address + 0x08n, values.length, force);
 
-    void this.write(dataPtr, scratch, force);
+    this.write(dataPtr, scratch, force);
 
     return this;
   }
@@ -2010,14 +2027,14 @@ class Memory {
         return scratch;
       }
 
-      void this.read(dataPtr, scratch);
+      this.read(dataPtr, scratch);
 
       return scratch;
     }
 
     this.u32(address + 0x08n, values.length, force);
 
-    void this.write(dataPtr, values, force);
+    this.write(dataPtr, values, force);
 
     return this;
   }
@@ -2048,14 +2065,14 @@ class Memory {
         return scratch;
       }
 
-      void this.read(dataPtr, scratch);
+      this.read(dataPtr, scratch);
 
       return scratch;
     }
 
     this.u32(address + 0x08n, values.length, force);
 
-    void this.write(dataPtr, values, force);
+    this.write(dataPtr, values, force);
 
     return this;
   }
@@ -2086,14 +2103,14 @@ class Memory {
         return scratch;
       }
 
-      void this.read(dataPtr, scratch);
+      this.read(dataPtr, scratch);
 
       return scratch;
     }
 
     this.u32(address + 0x08n, values.length, force);
 
-    void this.write(dataPtr, values, force);
+    this.write(dataPtr, values, force);
 
     return this;
   }
@@ -2124,14 +2141,14 @@ class Memory {
         return scratch;
       }
 
-      void this.read(dataPtr, scratch);
+      this.read(dataPtr, scratch);
 
       return scratch;
     }
 
     this.u32(address + 0x08n, values.length, force);
 
-    void this.write(dataPtr, values, force);
+    this.write(dataPtr, values, force);
 
     return this;
   }
@@ -2188,7 +2205,7 @@ class Memory {
 
       const scratch = Buffer.allocUnsafe((count - 0x01) * 0x02);
 
-      void this.read(dataPtr, scratch);
+      this.read(dataPtr, scratch);
 
       return scratch.toString('utf16le');
     }
@@ -2199,7 +2216,7 @@ class Memory {
 
     this.u32(address + 0x08n, value.length + 0x01, force);
 
-    void this.write(dataPtr, scratch, force);
+    this.write(dataPtr, scratch, force);
 
     return this;
   }
@@ -2220,10 +2237,10 @@ class Memory {
   public u16(address: bigint): number;
   public u16(address: bigint, value: number, force?: boolean): this;
   public u16(address: bigint, value?: number, force?: boolean): number | this {
-    const { hProcess, Scratch2Uint16Array } = this;
+    const { hProcess, Scratch2Uint16Array, Scratch2Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch2Uint16Array.ptr, 2n, 0n)) {
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch2Ptr, 2n, 0n)) {
         throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
       }
 
@@ -2232,7 +2249,7 @@ class Memory {
 
     Scratch2Uint16Array[0x00] = value;
 
-    void this.write(address, Scratch2Uint16Array, force);
+    this.write(address, Scratch2Uint16Array, force);
 
     return this;
   }
@@ -2257,14 +2274,14 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Uint16Array(length);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       return scratch;
     }
 
     const values = lengthOrValues;
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -2285,10 +2302,10 @@ class Memory {
   public u32(address: bigint): number;
   public u32(address: bigint, value: number, force?: boolean): this;
   public u32(address: bigint, value?: number, force?: boolean): number | this {
-    const { hProcess, Scratch4Uint32Array } = this;
+    const { hProcess, Scratch4Uint32Array, Scratch4Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch4Uint32Array.ptr, 4n, 0n)) {
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch4Ptr, 4n, 0n)) {
         throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
       }
 
@@ -2297,7 +2314,7 @@ class Memory {
 
     Scratch4Uint32Array[0x00] = value;
 
-    void this.write(address, Scratch4Uint32Array, force);
+    this.write(address, Scratch4Uint32Array, force);
 
     return this;
   }
@@ -2322,14 +2339,14 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Uint32Array(length);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       return scratch;
     }
 
     const values = lengthOrValues;
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -2350,10 +2367,10 @@ class Memory {
   public u64(address: bigint): bigint;
   public u64(address: bigint, value: bigint, force?: boolean): this;
   public u64(address: bigint, value?: bigint, force?: boolean): bigint | this {
-    const { hProcess, Scratch8BigUint64Array } = this;
+    const { hProcess, Scratch8BigUint64Array, Scratch8Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch8BigUint64Array.ptr, 8n, 0n)) {
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch8Ptr, 8n, 0n)) {
         throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
       }
 
@@ -2362,7 +2379,7 @@ class Memory {
 
     Scratch8BigUint64Array[0x00] = value;
 
-    void this.write(address, Scratch8BigUint64Array, force);
+    this.write(address, Scratch8BigUint64Array, force);
 
     return this;
   }
@@ -2387,14 +2404,14 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new BigUint64Array(length);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       return scratch;
     }
 
     const values = lengthOrValues;
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -2415,10 +2432,10 @@ class Memory {
   public u8(address: bigint): number;
   public u8(address: bigint, value: number, force?: boolean): this;
   public u8(address: bigint, value?: number, force?: boolean): number | this {
-    const { hProcess, Scratch1 } = this;
+    const { hProcess, Scratch1, Scratch1Ptr } = this;
 
     if (value === undefined) {
-      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch1.ptr, 1n, 0n)) {
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch1Ptr, 1n, 0n)) {
         throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
       }
 
@@ -2427,7 +2444,7 @@ class Memory {
 
     Scratch1[0x00] = value;
 
-    void this.write(address, Scratch1, force);
+    this.write(address, Scratch1, force);
 
     return this;
   }
@@ -2452,14 +2469,14 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Uint8Array(length);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       return scratch;
     }
 
     const values = lengthOrValues;
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -2534,7 +2551,7 @@ class Memory {
     const headerUint16Array = new Uint16Array(header.buffer, header.byteOffset);
     const headerBigUint64Array = new BigUint64Array(header.buffer, header.byteOffset + 0x08, 2);
 
-    void this.read(address, header);
+    this.read(address, header);
 
     const capacity = headerUint16Array[0x01]! & 0x7fff;
     const elementsPtr = headerBigUint64Array[0x00]!;
@@ -2548,7 +2565,7 @@ class Memory {
     const scratchBigUint64Array = new BigUint64Array(scratch.buffer, scratch.byteOffset);
     const scratchUint16Array = new Uint16Array(scratch.buffer, scratch.byteOffset);
 
-    void this.read(elementsPtr, scratch);
+    this.read(elementsPtr, scratch);
 
     let   count = 0; // prettier-ignore
     const result = new BigUint64Array(capacity);
@@ -2592,7 +2609,7 @@ class Memory {
       const byteLength = count * elementSize;
       const scratch = new Uint8Array(byteLength);
 
-      void this.read(elementsPtr, scratch);
+      this.read(elementsPtr, scratch);
 
       return scratch;
     }
@@ -2609,7 +2626,7 @@ class Memory {
       return this;
     }
 
-    void this.write(elementsPtr, values, force);
+    this.write(elementsPtr, values, force);
 
     return this;
   }
@@ -2640,7 +2657,7 @@ class Memory {
         return scratch;
       }
 
-      void this.read(elementsPtr, scratch);
+      this.read(elementsPtr, scratch);
 
       return scratch;
     }
@@ -2651,7 +2668,7 @@ class Memory {
       return this;
     }
 
-    void this.write(elementsPtr, values, force);
+    this.write(elementsPtr, values, force);
 
     return this;
   }
@@ -2682,7 +2699,7 @@ class Memory {
         return scratch;
       }
 
-      void this.read(elementsPtr, scratch);
+      this.read(elementsPtr, scratch);
 
       return scratch;
     }
@@ -2693,7 +2710,7 @@ class Memory {
       return this;
     }
 
-    void this.write(elementsPtr, values, force);
+    this.write(elementsPtr, values, force);
 
     return this;
   }
@@ -2710,9 +2727,19 @@ class Memory {
    * ```
    */
   public vFunction(address: bigint, index: number): bigint {
-    const vtablePtr = this.u64(address);
+    const { hProcess, Scratch8Ptr, Scratch8BigUint64Array } = this;
 
-    return this.u64(vtablePtr + BigInt(index * 0x08));
+    if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch8Ptr, 8n, 0n)) {
+      throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+    }
+
+    const vtablePtr = Scratch8BigUint64Array[0x00]!;
+
+    if (!Kernel32.ReadProcessMemory(hProcess, vtablePtr + BigInt(index * 0x08), Scratch8Ptr, 8n, 0n)) {
+      throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+    }
+
+    return Scratch8BigUint64Array[0x00]!;
   }
 
   /**
@@ -2816,7 +2843,7 @@ class Memory {
       throw new RangeError('values.length must be 2.');
     }
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -2837,10 +2864,12 @@ class Memory {
   public vector3(address: bigint): Vector3;
   public vector3(address: bigint, value: Vector3, force?: boolean): this;
   public vector3(address: bigint, value?: Vector3, force?: boolean): Vector3 | this {
-    const { Scratch12Float32Array } = this;
+    const { hProcess, Scratch12Ptr, Scratch12Float32Array } = this;
 
     if (value === undefined) {
-      void this.read(address, Scratch12Float32Array);
+      if (!Kernel32.ReadProcessMemory(hProcess, address, Scratch12Ptr, 12n, 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
 
       const x = Scratch12Float32Array[0x00]!,
             y = Scratch12Float32Array[0x01]!,
@@ -2853,7 +2882,7 @@ class Memory {
     Scratch12Float32Array[0x01] = value.y;
     Scratch12Float32Array[0x02] = value.z;
 
-    void this.write(address, Scratch12Float32Array, force);
+    this.write(address, Scratch12Float32Array, force);
 
     return this;
   }
@@ -2878,7 +2907,7 @@ class Memory {
       const length = lengthOrValues;
       const scratch = new Float32Array(length * 0x03);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       const result = new Array<Vector3>(length);
 
@@ -2904,7 +2933,7 @@ class Memory {
       scratch[j + 0x02] = vector3.z;
     }
 
-    void this.write(address, scratch, force);
+    this.write(address, scratch, force);
 
     return this;
   }
@@ -2948,7 +2977,7 @@ class Memory {
       throw new RangeError('values.length must be 3.');
     }
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -3040,7 +3069,7 @@ class Memory {
       throw new RangeError('values.length must be 4.');
     }
 
-    void this.write(address, values, force);
+    this.write(address, values, force);
 
     return this;
   }
@@ -3089,7 +3118,7 @@ class Memory {
     if (typeof lengthOrValue === 'number') {
       const scratch = Buffer.allocUnsafe(lengthOrValue * 2);
 
-      void this.read(address, scratch);
+      this.read(address, scratch);
 
       const u16View = new Uint16Array(scratch.buffer, scratch.byteOffset, lengthOrValue);
       const indexOf = u16View.indexOf(0x0000);
@@ -3101,7 +3130,7 @@ class Memory {
 
     scratch.write(lengthOrValue, 0, 'utf16le');
 
-    void this.write(address, scratch, force);
+    this.write(address, scratch, force);
 
     return this;
   }
@@ -3126,10 +3155,15 @@ class Memory {
       return address;
     }
 
+    const { hProcess, Scratch8Ptr, Scratch8BigUint64Array } = this;
     const last = length - 1;
 
     for (let i = 0; i < last; i++) {
-      address = this.u64(address + offsets[i]!);
+      if (!Kernel32.ReadProcessMemory(hProcess, address + offsets[i]!, Scratch8Ptr, 8n, 0n)) {
+        throw new Win32Error('ReadProcessMemory', Kernel32.GetLastError());
+      }
+
+      address = Scratch8BigUint64Array[0x00]!;
 
       if (address === 0n) {
         return -1n;
@@ -3169,7 +3203,7 @@ class Memory {
       ? Buffer.from(needle.buffer, needle.byteOffset, needle.byteLength)
       : Buffer.from(needle);
 
-    void this.read(address, haystack);
+    this.read(address, haystack);
 
     if (!all) {
       const indexOf = haystack.indexOf(needleBuffer);
