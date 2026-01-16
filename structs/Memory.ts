@@ -4,6 +4,22 @@ import { CString, ptr } from 'bun:ffi';
 
 import Kernel32, { INVALID_HANDLE_VALUE } from 'bun-kernel32';
 
+Kernel32.Preload([
+  'CloseHandle',
+  'CreateToolhelp32Snapshot',
+  'GetLastError',
+  'Module32FirstW',
+  'Module32NextW',
+  'OpenProcess',
+  'Process32FirstW',
+  'Process32NextW',
+  'ReadProcessMemory',
+  'VirtualAllocEx',
+  'VirtualFreeEx',
+  'VirtualProtectEx',
+  'WriteProcessMemory',
+]);
+
 const {
   CloseHandle,
   CreateToolhelp32Snapshot,
