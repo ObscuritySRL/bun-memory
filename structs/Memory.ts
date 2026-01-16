@@ -4,6 +4,9 @@ import { CString, ptr } from 'bun:ffi';
 
 import Kernel32, { INVALID_HANDLE_VALUE } from 'bun-kernel32';
 
+import type { Module, Point, QAngle, Quaternion, RGB, RGBA, Scratch, UPtr, UPtrArray, Vector2, Vector3, Vector4 } from '../types/Memory';
+import Win32Error from './Win32Error';
+
 Kernel32.Preload([
   'CloseHandle',
   'CreateToolhelp32Snapshot',
@@ -35,9 +38,6 @@ const {
   VirtualProtectEx,
   WriteProcessMemory,
 } = Kernel32;
-
-import type { Module, Point, QAngle, Quaternion, RGB, RGBA, Scratch, UPtr, UPtrArray, Vector2, Vector3, Vector4 } from '../types/Memory';
-import Win32Error from './Win32Error';
 
 /**
  * Provides cross-process memory manipulation for native applications.
