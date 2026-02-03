@@ -45,30 +45,10 @@ export type CallSignature = {
 };
 
 /**
- * Represents a loaded module in a process.
- * @property base Base address of the module.
- * @property name Module filename.
- * @property size Module size in bytes.
- * @example
- * ```ts
- * const cs2 = new Memory('cs2.exe');
- * const mainModule = cs2.modules['cs2.exe'];
- * ```
- */
-export type Module = {
-  /** Base address of the module. */
-  base: bigint;
-  /** Module filename. */
-  name: string;
-  /** Module size in bytes. */
-  size: number;
-};
-
-/**
  * Represents a contiguous vector of unsigned 32-bit integers.
  * @example
  * ```ts
- * const cs2 = new Memory('cs2.exe');
+ * const cs2 = new Process('cs2.exe');
  * const myVector = cs2.networkUtlVector(0x12345678n);
  * ```
  */
@@ -80,7 +60,7 @@ export type NetworkUtlVector = Uint32Array;
  * @property y Y coordinate.
  * @example
  * ```ts
- * const cs2 = new Memory('cs2.exe');
+ * const cs2 = new Process('cs2.exe');
  * const myPoint = cs2.point(0x12345678n);
  * ```
  */
@@ -99,7 +79,7 @@ export type Point = {
  * @property z Z component.
  * @example
  * ```ts
- * const cs2 = new Memory('cs2.exe');
+ * const cs2 = new Process('cs2.exe');
  * const myQuaternion = cs2.quaternion(0x12345678n);
  * ```
  */
@@ -121,7 +101,7 @@ export type Quaternion = {
  * @property yaw Yaw (Y axis).
  * @example
  * ```ts
- * const cs2 = new Memory('cs2.exe');
+ * const cs2 = new Process('cs2.exe');
  * const myQAngle = cs2.qAngle(0x12345678n);
  * ```
  */
@@ -141,7 +121,7 @@ export interface QAngle {
  * @property b Blue.
  * @example
  * ```ts
- * const cs2 = new Memory('cs2.exe');
+ * const cs2 = new Process('cs2.exe');
  * const myRGB = cs2.rgb(0x12345678n);
  * ```
  */
@@ -162,7 +142,7 @@ export type RGB = {
  * @property a Alpha.
  * @example
  * ```ts
- * const cs2 = new Memory('cs2.exe');
+ * const cs2 = new Process('cs2.exe');
  * const myRGBA = cs2.rgba(0x12345678n);
  * ```
  */
@@ -186,7 +166,7 @@ export type RGBA = {
  * @property type Type.
  * @example
  * ```ts
- * // Used internally by Memory
+ * // Used internally by Process
  * ```
  */
 export type Region = {
@@ -206,7 +186,7 @@ export type Region = {
  * Represents a buffer usable for memory operations.
  * @example
  * ```ts
- * const cs2 = new Memory('cs2.exe');
+ * const cs2 = new Process('cs2.exe');
  * const myBuffer = new Uint8Array(4);
  * cs2.read(0x12345678n, myBuffer);
  * ```
@@ -219,7 +199,7 @@ export type Scratch = BigInt64Array | BigUint64Array | Buffer | Float32Array | F
  * @property y Y coordinate.
  * @example
  * ```ts
- * const cs2 = new Memory('cs2.exe');
+ * const cs2 = new Process('cs2.exe');
  * const myVector2 = cs2.vector2(0x12345678n);
  * ```
  */
@@ -241,7 +221,7 @@ export type UPtrArray = BigUint64Array;
  * @property z Z coordinate.
  * @example
  * ```ts
- * const cs2 = new Memory('cs2.exe');
+ * const cs2 = new Process('cs2.exe');
  * const myVector3 = cs2.vector3(0x12345678n);
  * ```
  */
@@ -262,7 +242,7 @@ export type Vector3 = {
  * @property z Z component.
  * @example
  * ```ts
- * const cs2 = new Memory('cs2.exe');
+ * const cs2 = new Process('cs2.exe');
  * const myVector4 = cs2.vector4(0x12345678n);
  * ```
  */

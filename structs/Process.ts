@@ -4,9 +4,11 @@ import { CString, ptr } from 'bun:ffi';
 
 import Kernel32, { INVALID_HANDLE_VALUE } from 'bun-kernel32';
 
-import type { Module, Point, QAngle, Quaternion, RGB, RGBA, Scratch, UPtr, UPtrArray, Vector2, Vector3, Vector4 } from '../types/Memory';
+import type { Point, QAngle, Quaternion, RGB, RGBA, Scratch, UPtr, UPtrArray, Vector2, Vector3, Vector4 } from '../types/Process';
+import Module from './Module';
 import Win32Error from './Win32Error';
 
+// Preload FFI symbols to avoid lazy-loading overhead during hot paths
 Kernel32.Preload([
   'CloseHandle',
   'CreateToolhelp32Snapshot',
@@ -23,21 +25,7 @@ Kernel32.Preload([
   'WriteProcessMemory',
 ]);
 
-const {
-  CloseHandle,
-  CreateToolhelp32Snapshot,
-  GetLastError,
-  Module32FirstW,
-  Module32NextW,
-  OpenProcess,
-  Process32FirstW,
-  Process32NextW,
-  ReadProcessMemory,
-  VirtualAllocEx,
-  VirtualFreeEx,
-  VirtualProtectEx,
-  WriteProcessMemory,
-} = Kernel32;
+const { CloseHandle, CreateToolhelp32Snapshot, GetLastError, Module32FirstW, Module32NextW, OpenProcess, Process32FirstW, Process32NextW, ReadProcessMemory, VirtualAllocEx, VirtualFreeEx, VirtualProtectEx, WriteProcessMemory } = Kernel32;
 
 /**
  * Provides cross-process memory manipulation for native applications.
@@ -53,36 +41,33 @@ const {
  *
  * @example
  * ```ts
- * import Memory from 'bun-memory';
- * const cs2 = new Memory('cs2.exe');
+ * import Process from 'bun-memory';
+ * const cs2 = new Process('cs2.exe');
  * const myFloat = cs2.f32(0x12345678n);
  * cs2.close();
  * ```
  */
-class Memory {
+class Process {
   /**
    * Opens a process by PID or executable name.
    * @param identifier Process ID or executable name.
    * @throws If the process cannot be found or opened.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * ```
    */
   constructor(identifier: number | string) {
-    const { Patterns: { ReplaceTrailingNull } } = Memory; // prettier-ignore
-
     const dwFlags = 0x00000002; /* TH32CS_SNAPPROCESS */
-    const th32ProcessID = 0;
 
-    const hSnapshot = CreateToolhelp32Snapshot(dwFlags, th32ProcessID);
+    const hSnapshot = CreateToolhelp32Snapshot(dwFlags, 0);
 
     if (hSnapshot === -1n) {
       throw new Win32Error('CreateToolhelp32Snapshot', GetLastError());
     }
 
-    const lppeBuffer = Buffer.allocUnsafe(0x238 /* sizeof(PROCESSENTRY32) */);
-    /* */ lppeBuffer.writeUInt32LE(0x238 /* sizeof(PROCESSENTRY32) */);
+    const lppeBuffer = Buffer.allocUnsafe(0x238 /* sizeof(PROCESSENTRY32W) */);
+    /* */ lppeBuffer.writeUInt32LE(0x238 /* sizeof(PROCESSENTRY32W) */);
 
     const lppe = lppeBuffer.ptr;
 
@@ -95,7 +80,7 @@ class Memory {
     }
 
     do {
-      const szExeFile = lppeBuffer.toString('utf16le', 0x2c, 0x234).replace(ReplaceTrailingNull, '');
+      const szExeFile = lppeBuffer.toString('utf16le', 0x2c, 0x234).replace(Process.#Patterns.ReplaceTrailingNull, '');
       const th32ProcessID = lppeBuffer.readUInt32LE(0x08);
 
       if (
@@ -116,9 +101,13 @@ class Memory {
         throw new Win32Error('OpenProcess', GetLastError());
       }
 
-      this.__modules = {};
+      this.#modules = {};
 
+      this.cntThreads = lppeBuffer.readUInt32LE(0x18);
       this.hProcess = hProcess;
+      this.pcPriClassBase = lppeBuffer.readInt32LE(0x20);
+      this.szExeFile = szExeFile;
+      this.th32ParentProcessID = lppeBuffer.readUInt32LE(0x1c);
       this.th32ProcessID = th32ProcessID;
 
       this.refresh();
@@ -134,113 +123,109 @@ class Memory {
   }
 
   /**
-   * Creates a Memory instance from a process identifier.
+   * Creates a Process instance from a process identifier.
    * @param identifier Process ID or executable name.
-   * @returns A new Memory instance.
+   * @returns A new Process instance.
    * @throws If the process cannot be found or opened.
    * @example
    * ```ts
-   * const cs2 = Memory.from('cs2.exe');
-   * const byPid = Memory.from(1234);
+   * const cs2 = Process.from('cs2.exe');
+   * const byPid = Process.from(1234);
    * ```
    */
-  public static from(identifier: number | string): Memory {
-    return new Memory(identifier);
+  public static from(identifier: number | string): Process {
+    return new Process(identifier);
   }
 
   /**
-   * Map of loaded modules in the process, keyed by module name.
-   * @example
-   * ```ts
-   * const cs2 = new Memory('cs2.exe');
-   * const mainModule = cs2.modules['cs2.exe'];
-   * ```
-   */
-  private __modules: Record<string, Module>;
-
-  /**
    * Regex patterns for matching hex strings and wildcards in memory scans.
-   * Used by the pattern method.
    */
-  private static readonly Patterns = {
+  static readonly #Patterns = {
     PatternMatchAll: /(?:[0-9A-Fa-f]{2})+/g,
     PatternTest: /^(?=.*[0-9A-Fa-f]{2})(?:\*{2}|\?{2}|[0-9A-Fa-f]{2})+$/,
     ReplaceTrailingNull: /\0+$/,
   };
 
   /**
+   * Map of loaded modules in the process, keyed by module name.
+   */
+  #modules: Readonly<Record<string, Module>>;
+
+  /**
    * Scratch buffers and typed views for temporary FFI reads/writes.
-   * Used internally for efficient memory access and conversions.
    * Pointer values are pre-cached to eliminate property access overhead in hot paths.
    */
-  private readonly Scratch1 = new Uint8Array(0x01);
-  private readonly Scratch1Int8Array = new Int8Array(this.Scratch1.buffer, this.Scratch1.byteOffset, 0x01);
-  private readonly Scratch1Ptr = this.Scratch1.ptr;
+  readonly #Scratch1 = new Uint8Array(0x01);
+  readonly #Scratch1Int8Array = new Int8Array(this.#Scratch1.buffer, this.#Scratch1.byteOffset, 0x01);
+  readonly #Scratch1Ptr = this.#Scratch1.ptr;
 
-  private readonly Scratch2 = new Uint8Array(0x02);
-  private readonly Scratch2Int16Array = new Int16Array(this.Scratch2.buffer, this.Scratch2.byteOffset, 0x01);
-  private readonly Scratch2Ptr = this.Scratch2.ptr;
-  private readonly Scratch2Uint16Array = new Uint16Array(this.Scratch2.buffer, this.Scratch2.byteOffset, 0x01);
+  readonly #Scratch2 = new Uint8Array(0x02);
+  readonly #Scratch2Int16Array = new Int16Array(this.#Scratch2.buffer, this.#Scratch2.byteOffset, 0x01);
+  readonly #Scratch2Ptr = this.#Scratch2.ptr;
+  readonly #Scratch2Uint16Array = new Uint16Array(this.#Scratch2.buffer, this.#Scratch2.byteOffset, 0x01);
 
-  private readonly Scratch3 = new Uint8Array(0x03);
+  readonly #Scratch3 = new Uint8Array(0x03);
 
-  private readonly Scratch4 = new Uint8Array(0x04);
-  private readonly Scratch4Float32Array = new Float32Array(this.Scratch4.buffer, this.Scratch4.byteOffset, 0x01);
-  private readonly Scratch4Int32Array = new Int32Array(this.Scratch4.buffer, this.Scratch4.byteOffset, 0x01);
-  private readonly Scratch4Ptr = this.Scratch4.ptr;
-  private readonly Scratch4Uint32Array = new Uint32Array(this.Scratch4.buffer, this.Scratch4.byteOffset, 0x01);
+  readonly #Scratch4 = new Uint8Array(0x04);
+  readonly #Scratch4Float32Array = new Float32Array(this.#Scratch4.buffer, this.#Scratch4.byteOffset, 0x01);
+  readonly #Scratch4Int32Array = new Int32Array(this.#Scratch4.buffer, this.#Scratch4.byteOffset, 0x01);
+  readonly #Scratch4Ptr = this.#Scratch4.ptr;
+  readonly #Scratch4Uint32Array = new Uint32Array(this.#Scratch4.buffer, this.#Scratch4.byteOffset, 0x01);
 
-  private readonly Scratch8 = new Uint8Array(0x08);
-  private readonly Scratch8BigInt64Array = new BigInt64Array(this.Scratch8.buffer, this.Scratch8.byteOffset, 0x01);
-  private readonly Scratch8BigUint64Array = new BigUint64Array(this.Scratch8.buffer, this.Scratch8.byteOffset, 0x01);
-  private readonly Scratch8Float32Array = new Float32Array(this.Scratch8.buffer, this.Scratch8.byteOffset, 0x02);
-  private readonly Scratch8Float64Array = new Float64Array(this.Scratch8.buffer, this.Scratch8.byteOffset, 0x01);
-  private readonly Scratch8Ptr = this.Scratch8.ptr;
+  readonly #Scratch8 = new Uint8Array(0x08);
+  readonly #Scratch8BigInt64Array = new BigInt64Array(this.#Scratch8.buffer, this.#Scratch8.byteOffset, 0x01);
+  readonly #Scratch8BigUint64Array = new BigUint64Array(this.#Scratch8.buffer, this.#Scratch8.byteOffset, 0x01);
+  readonly #Scratch8Float32Array = new Float32Array(this.#Scratch8.buffer, this.#Scratch8.byteOffset, 0x02);
+  readonly #Scratch8Float64Array = new Float64Array(this.#Scratch8.buffer, this.#Scratch8.byteOffset, 0x01);
+  readonly #Scratch8Ptr = this.#Scratch8.ptr;
 
-  private readonly Scratch12 = new Uint8Array(0x0c);
-  private readonly Scratch12Float32Array = new Float32Array(this.Scratch12.buffer, this.Scratch12.byteOffset, 0x03);
-  private readonly Scratch12Ptr = this.Scratch12.ptr;
+  readonly #Scratch12 = new Uint8Array(0x0c);
+  readonly #Scratch12Float32Array = new Float32Array(this.#Scratch12.buffer, this.#Scratch12.byteOffset, 0x03);
+  readonly #Scratch12Ptr = this.#Scratch12.ptr;
 
-  private readonly Scratch16 = new Uint8Array(0x10);
-  private readonly Scratch16Float32Array = new Float32Array(this.Scratch16.buffer, this.Scratch16.byteOffset, 0x04);
-  private readonly Scratch16Ptr = this.Scratch16.ptr;
+  readonly #Scratch16 = new Uint8Array(0x10);
+  readonly #Scratch16Float32Array = new Float32Array(this.#Scratch16.buffer, this.#Scratch16.byteOffset, 0x04);
+  readonly #Scratch16Ptr = this.#Scratch16.ptr;
 
   // Reserved for future remote code execution features
-  private readonly _Scratch48 = new Uint8Array([
+  readonly #Scratch48 = new Uint8Array([
     0x48, 0xb9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x48, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x48, 0x83, 0xec, 0x28, 0xff, 0xd0, 0x48, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x48, 0x83, 0xc4,
     0x28, 0xc3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   ]);
 
   // Reserved for future features
-  private readonly _Scratch112 = new Uint8Array(0x70);
+  readonly #Scratch112 = new Uint8Array(0x70);
 
-  private readonly Scratch1080 = Buffer.allocUnsafe(0x438 /* sizeof(MODULEENTRY32W) */);
+  readonly #Scratch1080 = Buffer.allocUnsafe(0x438 /* sizeof(MODULEENTRY32W) */);
 
-  private static TextDecoderUTF8 = new TextDecoder('utf-8');
-  private static TextEncoderUTF8 = new TextEncoder('utf-8');
+  static #TextDecoderUTF8 = new TextDecoder('utf-8');
+  static #TextEncoderUTF8 = new TextEncoder('utf-8');
 
-  private readonly hProcess: bigint;
-  private readonly th32ProcessID: number;
+  public readonly cntThreads: number;
+  public readonly hProcess: bigint;
+  public readonly pcPriClassBase: number;
+  public readonly szExeFile: string;
+  public readonly th32ParentProcessID: number;
+  public readonly th32ProcessID: number;
 
   /**
    * Gets all loaded modules in the process.
-   * @returns Map of module name to module info with base-relative helpers.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const client = cs2.modules['client.dll'];
    * ```
    */
-  public get modules(): Memory['__modules'] {
-    return this.__modules;
+  public get modules(): Readonly<Record<string, Module>> {
+    return this.#modules;
   }
 
   /**
-   * Disposes resources held by this Memory instance.
+   * Disposes resources held by this Process instance.
    * Called automatically when using `using` blocks.
    * @example
    * ```ts
-   * using const mem = new Memory('cs2.exe');
+   * using const mem = new Process('cs2.exe');
    * // mem is disposed at the end of the block
    * ```
    */
@@ -251,11 +236,11 @@ class Memory {
   }
 
   /**
-   * Asynchronously disposes resources held by this Memory instance.
+   * Asynchronously disposes resources held by this Process instance.
    * Use in `await using` blocks for async cleanup.
    * @example
    * ```ts
-   * await using const mem = new Memory('cs2.exe');
+   * await using const mem = new Process('cs2.exe');
    * // mem is disposed asynchronously at the end of the block
    * ```
    */
@@ -300,7 +285,7 @@ class Memory {
    * Closes the process handle.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * cs2.close();
    * ```
    */
@@ -343,12 +328,12 @@ class Memory {
    * @returns Previous protection flags.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const previous = cs2.protection(0x12345678n, 0x1000, 0x40);
    * ```
    */
   public protection(address: bigint, length: number, protect: number): number {
-    const { Scratch4Uint32Array, hProcess } = this;
+    const { hProcess } = this;
 
     if (length <= 0) {
       throw new RangeError('length must be greater than 0.');
@@ -357,7 +342,7 @@ class Memory {
     const dwSize = BigInt(length);
     const flNewProtect = protect;
     const lpAddress = address;
-    const lpflOldProtect = Scratch4Uint32Array.ptr;
+    const lpflOldProtect = this.#Scratch4Uint32Array.ptr;
 
     const bVirtualProtectEx = VirtualProtectEx(hProcess, lpAddress, dwSize, flNewProtect, lpflOldProtect);
 
@@ -365,7 +350,7 @@ class Memory {
       throw new Win32Error('VirtualProtectEx', GetLastError());
     }
 
-    return Scratch4Uint32Array[0x00]!;
+    return this.#Scratch4Uint32Array[0x00]!;
   }
 
   /**
@@ -376,7 +361,7 @@ class Memory {
    * @todo Consider inlining the call in the if to cut a binding… I hate the idea… 🫠…
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myBuffer = cs2.read(0x12345678n, new Uint8Array(4));
    * ```
    */
@@ -398,74 +383,14 @@ class Memory {
   }
 
   /**
-   * Asynchronously reads memory into a buffer.
-   * For large reads (>= 64KB), yields to the event loop between chunks to prevent blocking.
-   * @param address Address to read from.
-   * @param scratch Buffer to fill.
-   * @returns Promise resolving to the filled buffer.
-   * @example
-   * ```ts
-   * const cs2 = new Memory('cs2.exe');
-   * const myBuffer = await cs2.readAsync(0x12345678n, new Uint8Array(0x100000));
-   * ```
-   */
-  public async readAsync<T extends Scratch>(address: bigint, scratch: T): Promise<T> {
-    const { hProcess } = this;
-
-    const byteLength = scratch.byteLength;
-
-    // For small reads, just do it directly
-    if (byteLength < 0x10000) {
-      const lpBuffer = ptr(scratch);
-      const nSize = BigInt(byteLength);
-
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, lpBuffer, nSize, 0x00n);
-
-      if (!bReadProcessMemory) {
-        throw new Win32Error('ReadProcessMemory', GetLastError());
-      }
-
-      return scratch;
-    }
-
-    // For large reads, chunk and yield to allow event loop processing
-    const chunkSize = 0x10000; // 64KB chunks
-    const scratchU8 = new Uint8Array(scratch.buffer, scratch.byteOffset, byteLength);
-
-    let offset = 0;
-
-    while (offset < byteLength) {
-      const remaining = byteLength - offset;
-      const size = remaining < chunkSize ? remaining : chunkSize;
-      const chunk = scratchU8.subarray(offset, offset + size);
-
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address + BigInt(offset), chunk.ptr, BigInt(size), 0x00n);
-
-      if (!bReadProcessMemory) {
-        throw new Win32Error('ReadProcessMemory', GetLastError());
-      }
-
-      offset += size;
-
-      // Yield to event loop between chunks
-      if (offset < byteLength) {
-        await new Promise<void>((resolve) => setImmediate(resolve));
-      }
-    }
-
-    return scratch;
-  }
-
-  /**
    * Refreshes the module list for the process.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * cs2.refresh();
    * ```
    */
   public refresh(): void {
-    const { Patterns: { ReplaceTrailingNull } } = Memory; // prettier-ignore
     const { th32ProcessID } = this;
 
     const dwFlags = 0x00000018; /* TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32 */
@@ -476,7 +401,7 @@ class Memory {
       throw new Win32Error('CreateToolhelp32Snapshot', GetLastError());
     }
 
-    const { Scratch1080: lpme } = this;
+    const lpme = this.#Scratch1080;
     /* */ lpme.writeUInt32LE(0x438 /* sizeof(MODULEENTRY32W) */);
 
     const bModule32FirstW = Module32FirstW(hSnapshot, ptr(lpme));
@@ -490,16 +415,18 @@ class Memory {
     const modules: Record<string, Module> = {};
 
     do {
+      const hModule = lpme.readBigUInt64LE(0x28);
       const modBaseAddr = lpme.readBigUInt64LE(0x18);
       const modBaseSize = lpme.readUInt32LE(0x20);
-      const szModule = lpme.toString('utf16le', 0x30, 0x230).replace(ReplaceTrailingNull, '');
+      const szExePath = lpme.toString('utf16le', 0x230, 0x438).replace(Process.#Patterns.ReplaceTrailingNull, '');
+      const szModule = lpme.toString('utf16le', 0x30, 0x230).replace(Process.#Patterns.ReplaceTrailingNull, '');
 
-      modules[szModule] = { base: modBaseAddr, name: szModule, size: modBaseSize };
+      modules[szModule] = new Module(this, hModule, modBaseAddr, modBaseSize, szExePath, szModule);
     } while (Module32NextW(hSnapshot, ptr(lpme)));
 
     CloseHandle(hSnapshot);
 
-    this.__modules = modules;
+    this.#modules = Object.freeze(modules);
 
     return;
   }
@@ -512,7 +439,7 @@ class Memory {
    * @returns This instance.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * cs2.write(0x12345678n, new Uint8Array([1,2,3,4]));
    * // Force a write by temporarily changing memory protection
    * cs2.write(0x12345678n, new Uint8Array([1,2,3,4]), true);
@@ -574,7 +501,7 @@ class Memory {
    * @returns The boolean at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myBool = cs2.bool(0x12345678n);
    * cs2.bool(0x12345678n, true);
    * ```
@@ -582,21 +509,21 @@ class Memory {
   public bool(address: bigint): boolean;
   public bool(address: bigint, value: boolean, force?: boolean): this;
   public bool(address: bigint, value?: boolean, force?: boolean): boolean | this {
-    const { hProcess, Scratch1, Scratch1Ptr } = this;
+    const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch1Ptr, 0x01n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch1Ptr, 0x01n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return Scratch1[0x00]! !== 0;
+      return this.#Scratch1[0x00]! !== 0;
     }
 
-    Scratch1[0x00] = value ? 0x01 : 0x00;
+    this.#Scratch1[0x00] = value ? 0x01 : 0x00;
 
-    this.write(address, Scratch1, force);
+    this.write(address, this.#Scratch1, force);
 
     return this;
   }
@@ -609,21 +536,21 @@ class Memory {
    * @returns The extracted bits as a number.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const flags = cs2.bits(0x12345678n, 4, 8); // Read 8 bits starting at bit 4
    * ```
    */
   public bits(address: bigint, startBit: number, bitCount: number): number {
-    const { hProcess, Scratch4Ptr, Scratch4Uint32Array } = this;
+    const { hProcess } = this;
 
-    const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch4Ptr, 0x04n, 0x00n);
+    const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4Ptr, 0x04n, 0x00n);
 
     if (!bReadProcessMemory) {
       throw new Win32Error('ReadProcessMemory', GetLastError());
     }
 
     const mask  = (1 << bitCount) - 1,
-          value = Scratch4Uint32Array[0x00]!; // prettier-ignore
+          value = this.#Scratch4Uint32Array[0x00]!; // prettier-ignore
 
     return (value >> startBit) & mask;
   }
@@ -636,7 +563,7 @@ class Memory {
    * @returns Buffer read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myBuffer = cs2.buffer(0x12345678n, 8);
    * cs2.buffer(0x12345678n, Buffer.from([1,2,3,4]));
    * ```
@@ -666,7 +593,7 @@ class Memory {
    * @returns CString read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myCString = cs2.cString(0x12345678n, 16);
    * cs2.cString(0x12345678n, new CString('hello'));
    * ```
@@ -703,7 +630,7 @@ class Memory {
    * @returns The float at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myFloat = cs2.f32(0x12345678n);
    * cs2.f32(0x12345678n, 1.23);
    * ```
@@ -711,21 +638,21 @@ class Memory {
   public f32(address: bigint): number;
   public f32(address: bigint, value: number, force?: boolean): this;
   public f32(address: bigint, value?: number, force?: boolean): number | this {
-    const { hProcess, Scratch4Float32Array, Scratch4Ptr } = this;
+    const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch4Ptr, 0x04n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4Ptr, 0x04n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return Scratch4Float32Array[0x00]!;
+      return this.#Scratch4Float32Array[0x00]!;
     }
 
-    Scratch4Float32Array[0x00] = value;
+    this.#Scratch4Float32Array[0x00] = value;
 
-    this.write(address, Scratch4Float32Array, force);
+    this.write(address, this.#Scratch4Float32Array, force);
 
     return this;
   }
@@ -738,7 +665,7 @@ class Memory {
    * @returns Float32Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myArray = cs2.f32Array(0x12345678n, 3);
    * cs2.f32Array(0x12345678n, new Float32Array([1,2,3]));
    * ```
@@ -770,7 +697,7 @@ class Memory {
    * @returns The float at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myFloat = cs2.f64(0x12345678n);
    * cs2.f64(0x12345678n, 1.23);
    * ```
@@ -778,21 +705,21 @@ class Memory {
   public f64(address: bigint): number;
   public f64(address: bigint, value: number, force?: boolean): this;
   public f64(address: bigint, value?: number, force?: boolean): number | this {
-    const { hProcess, Scratch8Float64Array, Scratch8Ptr } = this;
+    const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch8Ptr, 0x08n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8Ptr, 0x08n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return Scratch8Float64Array[0x00]!;
+      return this.#Scratch8Float64Array[0x00]!;
     }
 
-    Scratch8Float64Array[0x00] = value;
+    this.#Scratch8Float64Array[0x00] = value;
 
-    this.write(address, Scratch8Float64Array, force);
+    this.write(address, this.#Scratch8Float64Array, force);
 
     return this;
   }
@@ -805,7 +732,7 @@ class Memory {
    * @returns Float64Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myArray = cs2.f64Array(0x12345678n, 2);
    * cs2.f64Array(0x12345678n, new Float64Array([1,2]));
    * ```
@@ -837,7 +764,7 @@ class Memory {
    * @returns The int at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myInt = cs2.i16(0x12345678n);
    * cs2.i16(0x12345678n, 42);
    * ```
@@ -845,21 +772,21 @@ class Memory {
   public i16(address: bigint): number;
   public i16(address: bigint, value: number, force?: boolean): this;
   public i16(address: bigint, value?: number, force?: boolean): number | this {
-    const { hProcess, Scratch2Int16Array, Scratch2Ptr } = this;
+    const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch2Ptr, 0x02n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch2Ptr, 0x02n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return Scratch2Int16Array[0x00]!;
+      return this.#Scratch2Int16Array[0x00]!;
     }
 
-    Scratch2Int16Array[0x00] = value;
+    this.#Scratch2Int16Array[0x00] = value;
 
-    this.write(address, Scratch2Int16Array, force);
+    this.write(address, this.#Scratch2Int16Array, force);
 
     return this;
   }
@@ -872,7 +799,7 @@ class Memory {
    * @returns Int16Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myArray = cs2.i16Array(0x12345678n, 2);
    * cs2.i16Array(0x12345678n, new Int16Array([1,2]));
    * ```
@@ -904,7 +831,7 @@ class Memory {
    * @returns The int at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myInt = cs2.i32(0x12345678n);
    * cs2.i32(0x12345678n, 42);
    * ```
@@ -912,21 +839,21 @@ class Memory {
   public i32(address: bigint): number;
   public i32(address: bigint, value: number, force?: boolean): this;
   public i32(address: bigint, value?: number, force?: boolean): number | this {
-    const { hProcess, Scratch4Int32Array, Scratch4Ptr } = this;
+    const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch4Ptr, 0x04n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4Ptr, 0x04n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return Scratch4Int32Array[0x00]!;
+      return this.#Scratch4Int32Array[0x00]!;
     }
 
-    Scratch4Int32Array[0x00] = value;
+    this.#Scratch4Int32Array[0x00] = value;
 
-    this.write(address, Scratch4Int32Array, force);
+    this.write(address, this.#Scratch4Int32Array, force);
 
     return this;
   }
@@ -939,7 +866,7 @@ class Memory {
    * @returns Int32Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myArray = cs2.i32Array(0x12345678n, 2);
    * cs2.i32Array(0x12345678n, new Int32Array([1,2]));
    * ```
@@ -971,7 +898,7 @@ class Memory {
    * @returns The bigint at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myBigInt = cs2.i64(0x12345678n);
    * cs2.i64(0x12345678n, 123n);
    * ```
@@ -979,21 +906,21 @@ class Memory {
   public i64(address: bigint): bigint;
   public i64(address: bigint, value: bigint, force?: boolean): this;
   public i64(address: bigint, value?: bigint, force?: boolean): bigint | this {
-    const { hProcess, Scratch8BigInt64Array, Scratch8Ptr } = this;
+    const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch8Ptr, 0x08n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8Ptr, 0x08n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return Scratch8BigInt64Array[0x00]!;
+      return this.#Scratch8BigInt64Array[0x00]!;
     }
 
-    Scratch8BigInt64Array[0x00] = value;
+    this.#Scratch8BigInt64Array[0x00] = value;
 
-    this.write(address, Scratch8BigInt64Array, force);
+    this.write(address, this.#Scratch8BigInt64Array, force);
 
     return this;
   }
@@ -1006,7 +933,7 @@ class Memory {
    * @returns BigInt64Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myArray = cs2.i64Array(0x12345678n, 2);
    * cs2.i64Array(0x12345678n, new BigInt64Array([1n,2n]));
    * ```
@@ -1038,7 +965,7 @@ class Memory {
    * @returns The int at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myInt = cs2.i8(0x12345678n);
    * cs2.i8(0x12345678n, 7);
    * ```
@@ -1046,21 +973,21 @@ class Memory {
   public i8(address: bigint): number;
   public i8(address: bigint, value: number, force?: boolean): this;
   public i8(address: bigint, value?: number, force?: boolean): number | this {
-    const { hProcess, Scratch1Int8Array, Scratch1Ptr } = this;
+    const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch1Ptr, 0x01n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch1Ptr, 0x01n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return Scratch1Int8Array[0x00]!;
+      return this.#Scratch1Int8Array[0x00]!;
     }
 
-    Scratch1Int8Array[0x00] = value;
+    this.#Scratch1Int8Array[0x00] = value;
 
-    this.write(address, Scratch1Int8Array, force);
+    this.write(address, this.#Scratch1Int8Array, force);
 
     return this;
   }
@@ -1073,7 +1000,7 @@ class Memory {
    * @returns Int8Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myArray = cs2.i8Array(0x12345678n, 2);
    * cs2.i8Array(0x12345678n, new Int8Array([1,2]));
    * ```
@@ -1105,7 +1032,7 @@ class Memory {
    * @returns The matrix at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myMatrix = cs2.matrix3x3(0x12345678n);
    * cs2.matrix3x3(0x12345678n, new Float32Array(9));
    * ```
@@ -1138,7 +1065,7 @@ class Memory {
    * @returns The matrix at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myMatrix = cs2.matrix3x4(0x12345678n);
    * cs2.matrix3x4(0x12345678n, new Float32Array(12));
    * ```
@@ -1171,7 +1098,7 @@ class Memory {
    * @returns The matrix at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myMatrix = cs2.matrix4x4(0x12345678n);
    * cs2.matrix4x4(0x12345678n, new Float32Array(16));
    * ```
@@ -1204,7 +1131,7 @@ class Memory {
    * @returns The point at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myPoint = cs2.point(0x12345678n);
    * cs2.point(0x12345678n, { x: 1, y: 2 });
    * ```
@@ -1212,25 +1139,25 @@ class Memory {
   public point(address: bigint): Point;
   public point(address: bigint, value: Point, force?: boolean): this;
   public point(address: bigint, value?: Point, force?: boolean): Point | this {
-    const { hProcess, Scratch8Ptr, Scratch8Float32Array } = this;
+    const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch8Ptr, 0x08n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8Ptr, 0x08n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      const x = Scratch8Float32Array[0x00]!,
-            y = Scratch8Float32Array[0x01]!; // prettier-ignore
+      const x = this.#Scratch8Float32Array[0x00]!,
+            y = this.#Scratch8Float32Array[0x01]!; // prettier-ignore
 
       return { x, y };
     }
 
-    Scratch8Float32Array[0x00] = value.x;
-    Scratch8Float32Array[0x01] = value.y;
+    this.#Scratch8Float32Array[0x00] = value.x;
+    this.#Scratch8Float32Array[0x01] = value.y;
 
-    this.write(address, Scratch8Float32Array, force);
+    this.write(address, this.#Scratch8Float32Array, force);
 
     return this;
   }
@@ -1243,7 +1170,7 @@ class Memory {
    * @returns Array of points read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myPoints = cs2.pointArray(0x12345678n, 2);
    * cs2.pointArray(0x12345678n, [{ x: 1, y: 2 }, { x: 3, y: 4 }]);
    * ```
@@ -1292,7 +1219,7 @@ class Memory {
    * @returns Float32Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myPoint = cs2.pointRaw(0x12345678n);
    * cs2.pointRaw(0x12345678n, new Float32Array([1, 2]));
    * ```
@@ -1320,7 +1247,7 @@ class Memory {
    * @returns The QAngle at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myQAngle = cs2.qAngle(0x12345678n);
    * cs2.qAngle(0x12345678n, { pitch: 1, yaw: 2, roll: 3 });
    * ```
@@ -1328,23 +1255,21 @@ class Memory {
   public qAngle(address: bigint): QAngle;
   public qAngle(address: bigint, value: QAngle, force?: boolean): this;
   public qAngle(address: bigint, value?: QAngle, force?: boolean): QAngle | this {
-    const { Scratch12Float32Array } = this;
-
     if (value === undefined) {
-      this.read(address, Scratch12Float32Array);
+      this.read(address, this.#Scratch12Float32Array);
 
-      const pitch = Scratch12Float32Array[0x00]!,
-            roll  = Scratch12Float32Array[0x02]!,
-            yaw   = Scratch12Float32Array[0x01]!; // prettier-ignore
+      const pitch = this.#Scratch12Float32Array[0x00]!,
+            roll  = this.#Scratch12Float32Array[0x02]!,
+            yaw   = this.#Scratch12Float32Array[0x01]!; // prettier-ignore
 
       return { pitch, roll, yaw };
     }
 
-    Scratch12Float32Array[0x00] = value.pitch;
-    Scratch12Float32Array[0x02] = value.roll;
-    Scratch12Float32Array[0x01] = value.yaw;
+    this.#Scratch12Float32Array[0x00] = value.pitch;
+    this.#Scratch12Float32Array[0x02] = value.roll;
+    this.#Scratch12Float32Array[0x01] = value.yaw;
 
-    this.write(address, Scratch12Float32Array, force);
+    this.write(address, this.#Scratch12Float32Array, force);
 
     return this;
   }
@@ -1356,7 +1281,7 @@ class Memory {
    * @returns Array of QAngles read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myQAngles = cs2.qAngleArray(0x12345678n, 2);
    * cs2.qAngleArray(0x12345678n, [{ pitch: 1, yaw: 2, roll: 3 }]);
    * ```
@@ -1407,7 +1332,7 @@ class Memory {
    * @returns Float32Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const raw = cs2.qAngleRaw(0x12345678n);
    * cs2.qAngleRaw(0x12345678n, new Float32Array([1,2,3]));
    * ```
@@ -1436,7 +1361,7 @@ class Memory {
    * @returns The Quaternion at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myQuaternion = cs2.quaternion(0x12345678n);
    * cs2.quaternion(0x12345678n, { w: 1, x: 0, y: 0, z: 0 });
    * ```
@@ -1444,29 +1369,29 @@ class Memory {
   public quaternion(address: bigint): Quaternion;
   public quaternion(address: bigint, value: Quaternion, force?: boolean): this;
   public quaternion(address: bigint, value?: Quaternion, force?: boolean): Quaternion | this {
-    const { hProcess, Scratch16Ptr, Scratch16Float32Array } = this;
+    const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch16Ptr, 0x10n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch16Ptr, 0x10n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      const w = Scratch16Float32Array[0x03]!,
-            x = Scratch16Float32Array[0x00]!,
-            y = Scratch16Float32Array[0x01]!,
-            z = Scratch16Float32Array[0x02]!; // prettier-ignore
+      const w = this.#Scratch16Float32Array[0x03]!,
+            x = this.#Scratch16Float32Array[0x00]!,
+            y = this.#Scratch16Float32Array[0x01]!,
+            z = this.#Scratch16Float32Array[0x02]!; // prettier-ignore
 
       return { w, x, y, z };
     }
 
-    Scratch16Float32Array[0x03] = value.w;
-    Scratch16Float32Array[0x00] = value.x;
-    Scratch16Float32Array[0x01] = value.y;
-    Scratch16Float32Array[0x02] = value.z;
+    this.#Scratch16Float32Array[0x03] = value.w;
+    this.#Scratch16Float32Array[0x00] = value.x;
+    this.#Scratch16Float32Array[0x01] = value.y;
+    this.#Scratch16Float32Array[0x02] = value.z;
 
-    this.write(address, Scratch16Float32Array, force);
+    this.write(address, this.#Scratch16Float32Array, force);
 
     return this;
   }
@@ -1479,7 +1404,7 @@ class Memory {
    * @returns Array of Quaternions read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myQuaternions = cs2.quaternionArray(0x12345678n, 2);
    * cs2.quaternionArray(0x12345678n, [{ w: 1, x: 0, y: 0, z: 0 }]);
    * ```
@@ -1532,7 +1457,7 @@ class Memory {
    * @returns Float32Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const raw = cs2.quaternionRaw(0x12345678n);
    * cs2.quaternionRaw(0x12345678n, new Float32Array([1,0,0,0]));
    * ```
@@ -1561,7 +1486,7 @@ class Memory {
    * @returns The RGB at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myRGB = cs2.rgb(0x12345678n);
    * cs2.rgb(0x12345678n, { r: 255, g: 0, b: 0 });
    * ```
@@ -1569,23 +1494,21 @@ class Memory {
   public rgb(address: bigint): RGB;
   public rgb(address: bigint, value: RGB, force?: boolean): this;
   public rgb(address: bigint, value?: RGB, force?: boolean): RGB | this {
-    const { Scratch3 } = this;
-
     if (value === undefined) {
-      this.read(address, Scratch3);
+      this.read(address, this.#Scratch3);
 
-      const r = Scratch3[0x00]!,
-            g = Scratch3[0x01]!,
-            b = Scratch3[0x02]!; // prettier-ignore
+      const r = this.#Scratch3[0x00]!,
+            g = this.#Scratch3[0x01]!,
+            b = this.#Scratch3[0x02]!; // prettier-ignore
 
       return { r, g, b };
     }
 
-    Scratch3[0x00] = value.r;
-    Scratch3[0x01] = value.g;
-    Scratch3[0x02] = value.b;
+    this.#Scratch3[0x00] = value.r;
+    this.#Scratch3[0x01] = value.g;
+    this.#Scratch3[0x02] = value.b;
 
-    this.write(address, Scratch3, force);
+    this.write(address, this.#Scratch3, force);
 
     return this;
   }
@@ -1598,7 +1521,7 @@ class Memory {
    * @returns Uint8Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const raw = cs2.rgbRaw(0x12345678n);
    * cs2.rgbRaw(0x12345678n, new Uint8Array([255,0,0]));
    * ```
@@ -1627,7 +1550,7 @@ class Memory {
    * @returns The RGBA at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myRGBA = cs2.rgba(0x12345678n);
    * cs2.rgba(0x12345678n, { r: 255, g: 0, b: 0, a: 255 });
    * ```
@@ -1635,25 +1558,23 @@ class Memory {
   public rgba(address: bigint): RGBA;
   public rgba(address: bigint, value: RGBA, force?: boolean): this;
   public rgba(address: bigint, value?: RGBA, force?: boolean): RGBA | this {
-    const { Scratch4 } = this;
-
     if (value === undefined) {
-      this.read(address, Scratch4);
+      this.read(address, this.#Scratch4);
 
-      const r = Scratch4[0x00]!,
-            g = Scratch4[0x01]!,
-            b = Scratch4[0x02]!,
-            a = Scratch4[0x03]!; // prettier-ignore
+      const r = this.#Scratch4[0x00]!,
+            g = this.#Scratch4[0x01]!,
+            b = this.#Scratch4[0x02]!,
+            a = this.#Scratch4[0x03]!; // prettier-ignore
 
       return { r, g, b, a };
     }
 
-    Scratch4[0x00] = value.r;
-    Scratch4[0x01] = value.g;
-    Scratch4[0x02] = value.b;
-    Scratch4[0x03] = value.a;
+    this.#Scratch4[0x00] = value.r;
+    this.#Scratch4[0x01] = value.g;
+    this.#Scratch4[0x02] = value.b;
+    this.#Scratch4[0x03] = value.a;
 
-    this.write(address, Scratch4, force);
+    this.write(address, this.#Scratch4, force);
 
     return this;
   }
@@ -1666,7 +1587,7 @@ class Memory {
    * @returns Uint8Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const raw = cs2.rgbaRaw(0x12345678n);
    * cs2.rgbaRaw(0x12345678n, new Uint8Array([255,0,0,255]));
    * ```
@@ -1697,7 +1618,7 @@ class Memory {
    * @todo Compare performance when using CString vs TextDecoder when reading…
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myString = cs2.string(0x12345678n, 16);
    * cs2.string(0x12345678n, 'hello\0');
    * ```
@@ -1712,14 +1633,14 @@ class Memory {
 
       const indexOf = scratch.indexOf(0x00);
 
-      return Memory.TextDecoderUTF8.decode(
-        scratch.subarray(0, indexOf !== -1 ? indexOf : lengthOrValue) //
+      return Process.#TextDecoderUTF8.decode(
+        scratch.subarray(0, indexOf !== -1 ? indexOf : lengthOrValue), //
       );
 
       // return new CString(scratch.ptr).valueOf();
     }
 
-    const scratch = Memory.TextEncoderUTF8.encode(lengthOrValue);
+    const scratch = Process.#TextEncoderUTF8.encode(lengthOrValue);
 
     this.write(address, scratch, force);
 
@@ -1734,7 +1655,7 @@ class Memory {
    * @returns The string, or this instance if writing.
    * @example
    * ```ts
-   * const rl = new Memory('RocketLeague.exe');
+   * const rl = new Process('RocketLeague.exe');
    * const myString = rl.tArrayChar(0x12345678n);
    * rl.tArrayChar(0x12345678n, 'hello');
    * ```
@@ -1775,7 +1696,7 @@ class Memory {
    * @returns A Float32Array containing the elements, or this instance if writing.
    * @example
    * ```ts
-   * const rl = new Memory('RocketLeague.exe');
+   * const rl = new Process('RocketLeague.exe');
    * const myArray = rl.tArrayF32(0x12345678n);
    * rl.tArrayF32(0x12345678n, new Float32Array([1.0, 2.0, 3.0]));
    * ```
@@ -1813,7 +1734,7 @@ class Memory {
    * @returns A Float64Array containing the elements, or this instance if writing.
    * @example
    * ```ts
-   * const rl = new Memory('RocketLeague.exe');
+   * const rl = new Process('RocketLeague.exe');
    * const myArray = rl.tArrayF64(0x12345678n);
    * rl.tArrayF64(0x12345678n, new Float64Array([1.0, 2.0, 3.0]));
    * ```
@@ -1851,7 +1772,7 @@ class Memory {
    * @returns An Int16Array containing the elements, or this instance if writing.
    * @example
    * ```ts
-   * const rl = new Memory('RocketLeague.exe');
+   * const rl = new Process('RocketLeague.exe');
    * const myArray = rl.tArrayI16(0x12345678n);
    * rl.tArrayI16(0x12345678n, new Int16Array([1, 2, 3]));
    * ```
@@ -1889,7 +1810,7 @@ class Memory {
    * @returns An Int32Array containing the elements, or this instance if writing.
    * @example
    * ```ts
-   * const rl = new Memory('RocketLeague.exe');
+   * const rl = new Process('RocketLeague.exe');
    * const myArray = rl.tArrayI32(0x12345678n);
    * rl.tArrayI32(0x12345678n, new Int32Array([1, 2, 3]));
    * ```
@@ -1927,7 +1848,7 @@ class Memory {
    * @returns A BigInt64Array containing the elements, or this instance if writing.
    * @example
    * ```ts
-   * const rl = new Memory('RocketLeague.exe');
+   * const rl = new Process('RocketLeague.exe');
    * const myArray = rl.tArrayI64(0x12345678n);
    * rl.tArrayI64(0x12345678n, new BigInt64Array([1n, 2n, 3n]));
    * ```
@@ -1965,7 +1886,7 @@ class Memory {
    * @returns An Int8Array containing the elements, or this instance if writing.
    * @example
    * ```ts
-   * const rl = new Memory('RocketLeague.exe');
+   * const rl = new Process('RocketLeague.exe');
    * const myArray = rl.tArrayI8(0x12345678n);
    * rl.tArrayI8(0x12345678n, new Int8Array([1, 2, 3]));
    * ```
@@ -2005,7 +1926,7 @@ class Memory {
    * @returns An array of Buffers, one per element, or this instance if writing.
    * @example
    * ```ts
-   * const rl = new Memory('RocketLeague.exe');
+   * const rl = new Process('RocketLeague.exe');
    * const structs = rl.tArrayRaw(0x12345678n, 0x18); // Array of 0x18-byte buffers
    * rl.tArrayRaw(0x12345678n, [buffer1, buffer2]);
    * ```
@@ -2065,7 +1986,7 @@ class Memory {
    * @returns A Uint16Array containing the elements, or this instance if writing.
    * @example
    * ```ts
-   * const rl = new Memory('RocketLeague.exe');
+   * const rl = new Process('RocketLeague.exe');
    * const myArray = rl.tArrayU16(0x12345678n);
    * rl.tArrayU16(0x12345678n, new Uint16Array([1, 2, 3]));
    * ```
@@ -2103,7 +2024,7 @@ class Memory {
    * @returns A Uint32Array containing the elements, or this instance if writing.
    * @example
    * ```ts
-   * const rl = new Memory('RocketLeague.exe');
+   * const rl = new Process('RocketLeague.exe');
    * const myArray = rl.tArrayU32(0x12345678n);
    * rl.tArrayU32(0x12345678n, new Uint32Array([1, 2, 3]));
    * ```
@@ -2141,7 +2062,7 @@ class Memory {
    * @returns A BigUint64Array containing the elements, or this instance if writing.
    * @example
    * ```ts
-   * const rl = new Memory('RocketLeague.exe');
+   * const rl = new Process('RocketLeague.exe');
    * const myArray = rl.tArrayU64(0x12345678n);
    * rl.tArrayU64(0x12345678n, new BigUint64Array([1n, 2n, 3n]));
    * ```
@@ -2179,7 +2100,7 @@ class Memory {
    * @returns A Uint8Array containing the elements, or this instance if writing.
    * @example
    * ```ts
-   * const rl = new Memory('RocketLeague.exe');
+   * const rl = new Process('RocketLeague.exe');
    * const myArray = rl.tArrayU8(0x12345678n);
    * rl.tArrayU8(0x12345678n, new Uint8Array([1, 2, 3]));
    * ```
@@ -2217,7 +2138,7 @@ class Memory {
    * @returns A BigUint64Array containing the elements, or this instance if writing.
    * @example
    * ```ts
-   * const rl = new Memory('RocketLeague.exe');
+   * const rl = new Process('RocketLeague.exe');
    * const myArray = rl.tArrayUPtr(0x12345678n);
    * rl.tArrayUPtr(0x12345678n, new BigUint64Array([1n, 2n, 3n]));
    * ```
@@ -2242,7 +2163,7 @@ class Memory {
    * @returns The string, or this instance if writing.
    * @example
    * ```ts
-   * const rl = new Memory('RocketLeague.exe');
+   * const rl = new Process('RocketLeague.exe');
    * const myString = rl.tArrayWChar(0x12345678n);
    * rl.tArrayWChar(0x12345678n, 'hello');
    * ```
@@ -2285,7 +2206,7 @@ class Memory {
    * @returns The value at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myInt = cs2.u16(0x12345678n);
    * cs2.u16(0x12345678n, 42);
    * ```
@@ -2293,21 +2214,21 @@ class Memory {
   public u16(address: bigint): number;
   public u16(address: bigint, value: number, force?: boolean): this;
   public u16(address: bigint, value?: number, force?: boolean): number | this {
-    const { hProcess, Scratch2Uint16Array, Scratch2Ptr } = this;
+    const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch2Ptr, 0x02n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch2Ptr, 0x02n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return Scratch2Uint16Array[0x00]!;
+      return this.#Scratch2Uint16Array[0x00]!;
     }
 
-    Scratch2Uint16Array[0x00] = value;
+    this.#Scratch2Uint16Array[0x00] = value;
 
-    this.write(address, Scratch2Uint16Array, force);
+    this.write(address, this.#Scratch2Uint16Array, force);
 
     return this;
   }
@@ -2320,7 +2241,7 @@ class Memory {
    * @returns Uint16Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myArray = cs2.u16Array(0x12345678n, 2);
    * cs2.u16Array(0x12345678n, new Uint16Array([1,2]));
    * ```
@@ -2352,7 +2273,7 @@ class Memory {
    * @returns The value at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myInt = cs2.u32(0x12345678n);
    * cs2.u32(0x12345678n, 42);
    * ```
@@ -2360,21 +2281,21 @@ class Memory {
   public u32(address: bigint): number;
   public u32(address: bigint, value: number, force?: boolean): this;
   public u32(address: bigint, value?: number, force?: boolean): number | this {
-    const { hProcess, Scratch4Uint32Array, Scratch4Ptr } = this;
+    const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch4Ptr, 0x04n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4Ptr, 0x04n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return Scratch4Uint32Array[0x00]!;
+      return this.#Scratch4Uint32Array[0x00]!;
     }
 
-    Scratch4Uint32Array[0x00] = value;
+    this.#Scratch4Uint32Array[0x00] = value;
 
-    this.write(address, Scratch4Uint32Array, force);
+    this.write(address, this.#Scratch4Uint32Array, force);
 
     return this;
   }
@@ -2387,7 +2308,7 @@ class Memory {
    * @returns Uint32Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myArray = cs2.u32Array(0x12345678n, 2);
    * cs2.u32Array(0x12345678n, new Uint32Array([1,2]));
    * ```
@@ -2419,7 +2340,7 @@ class Memory {
    * @returns The bigint at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myBigInt = cs2.u64(0x12345678n);
    * cs2.u64(0x12345678n, 123n);
    * ```
@@ -2427,21 +2348,21 @@ class Memory {
   public u64(address: bigint): bigint;
   public u64(address: bigint, value: bigint, force?: boolean): this;
   public u64(address: bigint, value?: bigint, force?: boolean): bigint | this {
-    const { hProcess, Scratch8BigUint64Array, Scratch8Ptr } = this;
+    const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch8Ptr, 0x08n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8Ptr, 0x08n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return Scratch8BigUint64Array[0x00]!;
+      return this.#Scratch8BigUint64Array[0x00]!;
     }
 
-    Scratch8BigUint64Array[0x00] = value;
+    this.#Scratch8BigUint64Array[0x00] = value;
 
-    this.write(address, Scratch8BigUint64Array, force);
+    this.write(address, this.#Scratch8BigUint64Array, force);
 
     return this;
   }
@@ -2454,7 +2375,7 @@ class Memory {
    * @returns BigUint64Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myArray = cs2.u64Array(0x12345678n, 2);
    * cs2.u64Array(0x12345678n, new BigUint64Array([1n,2n]));
    * ```
@@ -2486,7 +2407,7 @@ class Memory {
    * @returns The value at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myInt = cs2.u8(0x12345678n);
    * cs2.u8(0x12345678n, 7);
    * ```
@@ -2494,21 +2415,21 @@ class Memory {
   public u8(address: bigint): number;
   public u8(address: bigint, value: number, force?: boolean): this;
   public u8(address: bigint, value?: number, force?: boolean): number | this {
-    const { hProcess, Scratch1, Scratch1Ptr } = this;
+    const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch1Ptr, 0x01n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch1Ptr, 0x01n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return Scratch1[0x00]!;
+      return this.#Scratch1[0x00]!;
     }
 
-    Scratch1[0x00] = value;
+    this.#Scratch1[0x00] = value;
 
-    this.write(address, Scratch1, force);
+    this.write(address, this.#Scratch1, force);
 
     return this;
   }
@@ -2521,7 +2442,7 @@ class Memory {
    * @returns Uint8Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myArray = cs2.u8Array(0x12345678n, 2);
    * cs2.u8Array(0x12345678n, new Uint8Array([1,2]));
    * ```
@@ -2553,7 +2474,7 @@ class Memory {
    * @returns The value at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myPtr = cs2.uPtr(0x12345678n);
    * cs2.uPtr(0x12345678n, 123n);
    * ```
@@ -2577,7 +2498,7 @@ class Memory {
    * @returns Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myPtrs = cs2.uPtrArray(0x12345678n, 2);
    * cs2.uPtrArray(0x12345678n, new BigUint64Array([1n,2n]));
    * ```
@@ -2606,7 +2527,7 @@ class Memory {
    * @todo Create a writer so that users can write linked lists…
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myList = cs2.utlLinkedListU64(0x12345678n);
    * ```
    */
@@ -2703,7 +2624,7 @@ class Memory {
    * @returns The vector at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myVector = cs2.utlVectorU32(0x12345678n);
    * cs2.utlVectorU32(0x12345678n, new Uint32Array([1,2,3]));
    * ```
@@ -2745,7 +2666,7 @@ class Memory {
    * @returns The vector at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myVector = cs2.utlVectorU64(0x12345678n);
    * cs2.utlVectorU64(0x12345678n, new BigUint64Array([1n,2n,3n]));
    * ```
@@ -2786,28 +2707,28 @@ class Memory {
    * @returns The virtual function pointer.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const vfunc = cs2.vFunction(0x12345678n, 5); // Get 6th virtual function
    * ```
    */
   public vFunction(address: bigint, index: number): bigint {
-    const { hProcess, Scratch8Ptr, Scratch8BigUint64Array } = this;
+    const { hProcess } = this;
 
-    const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch8Ptr, 0x08n, 0x00n);
+    const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8Ptr, 0x08n, 0x00n);
 
     if (!bReadProcessMemory) {
       throw new Win32Error('ReadProcessMemory', GetLastError());
     }
 
-    const vtablePtr = Scratch8BigUint64Array[0x00]!;
+    const vtablePtr = this.#Scratch8BigUint64Array[0x00]!;
 
-    const bReadProcessMemory2 = !!ReadProcessMemory(hProcess, vtablePtr + BigInt(index * 0x08), Scratch8Ptr, 0x08n, 0x00n);
+    const bReadProcessMemory2 = !!ReadProcessMemory(hProcess, vtablePtr + BigInt(index * 0x08), this.#Scratch8Ptr, 0x08n, 0x00n);
 
     if (!bReadProcessMemory2) {
       throw new Win32Error('ReadProcessMemory', GetLastError());
     }
 
-    return Scratch8BigUint64Array[0x00]!;
+    return this.#Scratch8BigUint64Array[0x00]!;
   }
 
   /**
@@ -2816,7 +2737,7 @@ class Memory {
    * @returns The vtable pointer.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const vtable = cs2.vTable(0x12345678n);
    * ```
    */
@@ -2832,7 +2753,7 @@ class Memory {
    * @returns The Vector2 at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myVector2 = cs2.vector2(0x12345678n);
    * cs2.vector2(0x12345678n, { x: 1, y: 2 });
    * ```
@@ -2856,7 +2777,7 @@ class Memory {
    * @returns Array of Vector2 read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myVector2s = cs2.vector2Array(0x12345678n, 2);
    * cs2.vector2Array(0x12345678n, [{ x: 1, y: 2 }, { x: 3, y: 4 }]);
    * ```
@@ -2879,7 +2800,7 @@ class Memory {
    * @returns Float32Array of length * 2 floats.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const raw = cs2.vector2ArrayRaw(0x12345678n, 100); // 200 floats
    * ```
    */
@@ -2895,7 +2816,7 @@ class Memory {
    * @returns Float32Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myVector2 = cs2.vector2Raw(0x12345678n);
    * cs2.vector2Raw(0x12345678n, new Float32Array([1, 2]));
    * ```
@@ -2924,7 +2845,7 @@ class Memory {
    * @returns The Vector3 at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myVector3 = cs2.vector3(0x12345678n);
    * cs2.vector3(0x12345678n, { x: 1, y: 2, z: 3 });
    * ```
@@ -2932,27 +2853,27 @@ class Memory {
   public vector3(address: bigint): Vector3;
   public vector3(address: bigint, value: Vector3, force?: boolean): this;
   public vector3(address: bigint, value?: Vector3, force?: boolean): Vector3 | this {
-    const { hProcess, Scratch12Ptr, Scratch12Float32Array } = this;
+    const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, Scratch12Ptr, 0x0cn, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch12Ptr, 0x0cn, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      const x = Scratch12Float32Array[0x00]!,
-            y = Scratch12Float32Array[0x01]!,
-            z = Scratch12Float32Array[0x02]!; // prettier-ignore
+      const x = this.#Scratch12Float32Array[0x00]!,
+            y = this.#Scratch12Float32Array[0x01]!,
+            z = this.#Scratch12Float32Array[0x02]!; // prettier-ignore
 
       return { x, y, z };
     }
 
-    Scratch12Float32Array[0x00] = value.x;
-    Scratch12Float32Array[0x01] = value.y;
-    Scratch12Float32Array[0x02] = value.z;
+    this.#Scratch12Float32Array[0x00] = value.x;
+    this.#Scratch12Float32Array[0x01] = value.y;
+    this.#Scratch12Float32Array[0x02] = value.z;
 
-    this.write(address, Scratch12Float32Array, force);
+    this.write(address, this.#Scratch12Float32Array, force);
 
     return this;
   }
@@ -2965,7 +2886,7 @@ class Memory {
    * @returns Array of Vector3 read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myVector3s = cs2.vector3Array(0x12345678n, 2);
    * cs2.vector3Array(0x12345678n, [{ x: 1, y: 2, z: 3 }]);
    * ```
@@ -3015,7 +2936,7 @@ class Memory {
    * @returns Float32Array of length * 3 floats.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const raw = cs2.vector3ArrayRaw(0x12345678n, 100); // 300 floats
    * ```
    */
@@ -3031,7 +2952,7 @@ class Memory {
    * @returns Float32Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myVector3 = cs2.vector3Raw(0x12345678n);
    * cs2.vector3Raw(0x12345678n, new Float32Array([1, 2, 3]));
    * ```
@@ -3060,7 +2981,7 @@ class Memory {
    * @returns The Vector4 at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myVector4 = cs2.vector4(0x12345678n);
    * cs2.vector4(0x12345678n, { w: 1, x: 0, y: 0, z: 0 });
    * ```
@@ -3084,7 +3005,7 @@ class Memory {
    * @returns Array of Vector4 read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myVector4s = cs2.vector4Array(0x12345678n, 2);
    * cs2.vector4Array(0x12345678n, [{ w: 1, x: 0, y: 0, z: 0 }]);
    * ```
@@ -3107,7 +3028,7 @@ class Memory {
    * @returns Float32Array of length * 4 floats.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const raw = cs2.vector4ArrayRaw(0x12345678n, 100); // 400 floats
    * ```
    */
@@ -3123,7 +3044,7 @@ class Memory {
    * @returns Float32Array read or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myVector4 = cs2.vector4Raw(0x12345678n);
    * cs2.vector4Raw(0x12345678n, new Float32Array([1, 0, 0, 0]));
    * ```
@@ -3152,7 +3073,7 @@ class Memory {
    * @returns The matrix at address, or this instance if writing.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const viewMatrix = cs2.viewMatrix(0x12345678n);
    * cs2.viewMatrix(0x12345678n, new Float32Array(16));
    * ```
@@ -3177,7 +3098,7 @@ class Memory {
    * @notice When writing, remember to null-terminate your string (e.g., 'hello\0').
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myWideString = cs2.wideString(0x12345678n, 16);
    * cs2.wideString(0x12345678n, 'hello\0');
    * ```
@@ -3214,7 +3135,7 @@ class Memory {
    * @returns Final address after following the chain, or -1n if any pointer is null.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const myAddress = cs2.follow(0x10000000n, [0x10n, 0x20n]);
    * ```
    */
@@ -3225,17 +3146,17 @@ class Memory {
       return address;
     }
 
-    const { hProcess, Scratch8Ptr, Scratch8BigUint64Array } = this;
+    const { hProcess } = this;
     const last = length - 1;
 
     for (let i = 0; i < last; i++) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address + offsets[i]!, Scratch8Ptr, 0x08n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address + offsets[i]!, this.#Scratch8Ptr, 0x08n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      address = Scratch8BigUint64Array[0x00]!;
+      address = this.#Scratch8BigUint64Array[0x00]!;
 
       if (address === 0n) {
         return -1n;
@@ -3254,7 +3175,7 @@ class Memory {
    * @returns Address of the buffer if found, or -1n. If all is true, returns an array of addresses.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * const needle = Buffer.from('Hello world!');
    * // const needle = Buffer.from([0x01, 0x02, 0x03]);
    * // const needle = new Uint8Array([0x01, 0x02, 0x03]);
@@ -3307,7 +3228,7 @@ class Memory {
    * @returns Address of the pattern if found, or -1n. If all is true, returns an array of addresses.
    * @example
    * ```ts
-   * const cs2 = new Memory('cs2.exe');
+   * const cs2 = new Process('cs2.exe');
    * // Find first match
    * const address = cs2.pattern('dead**ef', 0x10000000n, 0x1000);
    * // Find all matches
@@ -3318,7 +3239,7 @@ class Memory {
   public pattern(needle: string, address: bigint, length: number, all: false): bigint;
   public pattern(needle: string, address: bigint, length: number, all: true): bigint[];
   public pattern(needle: string, address: bigint, length: number, all: boolean = false): bigint | bigint[] {
-    const test = Memory.Patterns.PatternTest.test(needle);
+    const test = Process.#Patterns.PatternTest.test(needle);
 
     if (!test) {
       return !all ? -1n : [];
@@ -3326,7 +3247,7 @@ class Memory {
 
     // The RegExp test ensures that we have at least one token…
 
-    const tokens = [...needle.matchAll(Memory.Patterns.PatternMatchAll)]
+    const tokens = [...needle.matchAll(Process.#Patterns.PatternMatchAll)]
       .map((match) => ({ buffer: Buffer.from(match[0], 'hex'), index: match.index >>> 1, length: match[0].length >>> 1 })) //
       .sort(({ length: a }, { length: b }) => b - a);
 
@@ -3407,4 +3328,5 @@ class Memory {
   }
 }
 
-export default Memory;
+export default Process;
+export { Process };
