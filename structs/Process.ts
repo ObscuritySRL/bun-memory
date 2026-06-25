@@ -108,8 +108,10 @@ const WAIT_OBJECT_0 = 0x0000_0000;
  * Many scalar reads utilize `TypedArray` scratches to avoid a second FFI hop, such as calling `bun:ffi.read.*`.
  *
  * The target architecture is detected once at attach via IsWow64Process2 and exposed as `is32Bit`.
- * @todo 32-bit targets are detected (and call() rejects them) but the pointer-width-dependent reads
- *   (u64/uPtr/follow/vTable/tArray/utlVector offsets) still assume 64-bit; width-correct them next.
+ * The pointer primitives (`uPtr`, `uPtrArray`, `follow`, `vTable`, `vFunction`) are width-corrected
+ * for 32-bit (WOW64) targets; `call()` rejects them.
+ * @todo The engine-container header offsets (`tArray*`, `utlVector*`, `utlLinkedListU64`) still assume
+ *   64-bit pointers; width-correct them next (the layout recipe is recorded in TODO.md).
  *
  * @example
  * ```ts
@@ -2916,7 +2918,15 @@ class Process {
   public uPtr(address: bigint, value: UPtr, force?: boolean): this;
   public uPtr(address: bigint, value?: UPtr, force?: boolean): UPtr | this {
     if (value === undefined) {
+      if (this.is32Bit) {
+        return BigInt(this.u32(address));
+      }
+
       return this.u64(address);
+    }
+
+    if (this.is32Bit) {
+      return this.u32(address, Number(BigInt.asUintN(0x20, value)), force);
     }
 
     return this.u64(address, value, force);
@@ -2939,7 +2949,30 @@ class Process {
   public uPtrArray(address: bigint, values: UPtrArray, force?: boolean): this;
   public uPtrArray(address: bigint, lengthOrValues: UPtrArray | number, force?: boolean): UPtrArray | this {
     if (typeof lengthOrValues === 'number') {
+      if (this.is32Bit) {
+        const length = lengthOrValues;
+        const scratch = this.u32Array(address, length);
+        const result = new BigUint64Array(length);
+
+        for (let index = 0; index < length; index++) {
+          result[index] = BigInt(scratch[index]!);
+        }
+
+        return result;
+      }
+
       return this.u64Array(address, lengthOrValues);
+    }
+
+    if (this.is32Bit) {
+      const values = lengthOrValues;
+      const scratch = new Uint32Array(values.length);
+
+      for (let index = 0; index < values.length; index++) {
+        scratch[index] = Number(BigInt.asUintN(0x20, values[index]!));
+      }
+
+      return this.u32Array(address, scratch, force);
     }
 
     return this.u64Array(address, lengthOrValues, force);
@@ -3151,6 +3184,12 @@ class Process {
    * ```
    */
   public vFunction(address: bigint, index: number): bigint {
+    if (this.is32Bit) {
+      const vtablePointer = BigInt(this.u32(address));
+
+      return BigInt(this.u32(vtablePointer + BigInt(index * 0x04)));
+    }
+
     const { hProcess } = this;
 
     const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8.ptr, 0x08n, null);
@@ -3181,6 +3220,10 @@ class Process {
    * ```
    */
   public vTable(address: bigint): bigint {
+    if (this.is32Bit) {
+      return BigInt(this.u32(address));
+    }
+
     return this.u64(address);
   }
 
@@ -3586,8 +3629,21 @@ class Process {
       return address;
     }
 
-    const { hProcess } = this;
     const last = length - 1;
+
+    if (this.is32Bit) {
+      for (let i = 0; i < last; i++) {
+        address = BigInt(this.u32(address + offsets[i]!));
+
+        if (address === 0n) {
+          return -1n;
+        }
+      }
+
+      return address + offsets[last]!;
+    }
+
+    const { hProcess } = this;
 
     for (let i = 0; i < last; i++) {
       const bReadProcessMemory = !!ReadProcessMemory(hProcess, address + offsets[i]!, this.#Scratch8.ptr, 0x08n, null);

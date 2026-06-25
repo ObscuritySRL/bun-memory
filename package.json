@@ -54,7 +54,8 @@
     "run:benchmark-rocket-league": "bun ./example/benchmark-rocket-league.ts",
     "run:trigger-bot": "bun ./example/trigger-bot.ts",
     "test": "bun test ./example/self-process.integration.ts",
-    "test:rocket-league": "bun test ./example/rocket-league.integration.ts"
+    "test:rocket-league": "bun test ./example/rocket-league.integration.ts",
+    "test:wow64": "bun test ./example/wow64.integration.ts"
   },
   "type": "module",
   "dependencies": {
