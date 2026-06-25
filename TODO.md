@@ -26,7 +26,10 @@ Maintained alongside the code (see prompts/BUILD.md). `[x]` done this session; `
 - [x] Dead code: delete ProcessEntry32W.ts, MBI.query() static, Region + NetworkUtlVector types.
 - [x] f16()/f16Array() half-precision accessors.
 - [x] perf: inline qAngle/rgb/rgba reads (cached .ptr + literal size); drop a force-path allocation;
-  reuse a grow-on-demand #patternHaystack in pattern() (was one Buffer per region).
+  reuse a grow-on-demand #patternHaystack in pattern(); combine the two-RPM header read in ALL
+  tArray* + utlVector* accessors (one fewer syscall per read; measured ~30-32% faster on small reads:
+  tArrayU32 937->635 ns/op, utlVectorU32 941->660 ns/op).
+- [x] Expand the integration gate to 49 tests / 108 assertions (full accessor surface round-trips).
 - [x] docs: README Memory->Process / Uint64Array->BigUint64Array; Module JSDoc .module()->.modules[];
   remove 8 emoji comments + 3 musing @todos + a dead commented line.
 - [x] ship: drop example/*.ts from files[] (examples need a game + offsets JSON that never shipped).
@@ -36,10 +39,9 @@ Maintained alongside the code (see prompts/BUILD.md). `[x]` done this session; `
 ## HARDEN — remaining (behavior-identical)
 
 - [ ] Scalar writers funnel through write() (re-ptr + BigInt). Inline WriteProcessMemory in the
-  non-force branch with cached .ptr + literal size. Deferred: ~11 methods of churn for an
-  RPM-dominated path; behavior-identical, gated by the harness when done.
-- [ ] tArray*/utlVector* read the 16-byte header in two RPMs; read it once into #Scratch16. Deferred:
-  touches ~14 tArray methods; each method's logic changes, not just the call.
+  non-force branch. DECLINED for now: ~12 per-method edits (different scratch/size each, no clean
+  replace_all), and the WriteProcessMemory syscall dominates so the ptr()+BigInt() saving is ~2-3%
+  (u32 write ~1615 ns). Not worth the churn per AGENTS "profile first / minimal diff".
 - [ ] call() outer `finally { this.free() }` can mask the in-flight error if free() throws. Low; the
   fix (swallow in finally) also hides a success-path free failure — needs care.
 - [ ] wideString builds a Uint16Array over a pooled Buffer at scratch.byteOffset (throws on an odd

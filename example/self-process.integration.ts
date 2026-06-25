@@ -373,6 +373,13 @@ describe('remote call', () => {
     expect(self.call(fn, { args: [], returns: FFIType.u32 } as const)).toBe(0x1337);
     self.free(fn);
   });
+
+  test('call() marshals an argument (mov eax, ecx; ret)', () => {
+    const fn = self.alloc(0x10, 0x40 /* PAGE_EXECUTE_READWRITE */);
+    self.write(fn, Buffer.from([0x8b, 0xc1, 0xc3])); // returns the first integer argument
+    expect(self.call(fn, { args: [FFIType.u32], returns: FFIType.u32 } as const, 0x1234)).toBe(0x1234);
+    self.free(fn);
+  });
 });
 
 describe('reliability', () => {
