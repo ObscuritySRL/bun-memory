@@ -1643,6 +1643,7 @@ class Process {
    * Reads or writes a QAngle (object with pitch, yaw, roll).
    * @param address Address to access.
    * @param value Optional QAngle to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The QAngle at address, or this instance if writing.
    * @example
    * ```ts
@@ -1683,6 +1684,7 @@ class Process {
    * Reads or writes an array of QAngles.
    * @param address Address to access.
    * @param lengthOrValues Length to read or array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns Array of QAngles read or this instance if writing.
    * @example
    * ```ts
@@ -3516,10 +3518,16 @@ class Process {
 
       this.read(address, scratch);
 
-      const u16View = new Uint16Array(scratch.buffer, scratch.byteOffset, lengthOrValue);
-      const indexOf = u16View.indexOf(0x0000);
+      let indexOf = lengthOrValue;
 
-      return scratch.toString('utf16le', 0, (indexOf !== -1 ? indexOf : lengthOrValue) * 2);
+      for (let index = 0; index < lengthOrValue; index++) {
+        if (scratch.readUInt16LE(index * 0x02) === 0x0000) {
+          indexOf = index;
+          break;
+        }
+      }
+
+      return scratch.toString('utf16le', 0, indexOf * 2);
     }
 
     const scratch = Buffer.allocUnsafe(lengthOrValue.length * 2);
