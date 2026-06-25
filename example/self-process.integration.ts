@@ -20,6 +20,7 @@ describe('attach', () => {
   test('opens the current process and enumerates modules', () => {
     expect(self.th32ProcessID).toBe(process.pid);
     expect(Object.keys(self.modules).length).toBeGreaterThan(0);
+    expect(self.is32Bit).toBe(false); // the test runner (bun.exe) is x64
   });
 });
 

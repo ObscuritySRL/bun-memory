@@ -16,6 +16,7 @@ Kernel32.Preload([
   'CreateRemoteThread',
   'CreateToolhelp32Snapshot',
   'GetLastError',
+  'IsWow64Process2',
   'Module32FirstW',
   'Module32NextW',
   'OpenProcess',
@@ -35,6 +36,7 @@ const {
   CreateRemoteThread,
   CreateToolhelp32Snapshot,
   GetLastError,
+  IsWow64Process2,
   Module32FirstW,
   Module32NextW,
   OpenProcess,
@@ -105,8 +107,9 @@ const WAIT_OBJECT_0 = 0x0000_0000;
  *
  * Many scalar reads utilize `TypedArray` scratches to avoid a second FFI hop, such as calling `bun:ffi.read.*`.
  *
- * @todo Add support for 32 or 64-bit processes using IsWow64Process2 (Windows 10+).
- * @todo When adding 32-bit support, several u64 will need changed to u64_fast.
+ * The target architecture is detected once at attach via IsWow64Process2 and exposed as `is32Bit`.
+ * @todo 32-bit targets are detected (and call() rejects them) but the pointer-width-dependent reads
+ *   (u64/uPtr/follow/vTable/tArray/utlVector offsets) still assume 64-bit; width-correct them next.
  *
  * @example
  * ```ts
@@ -179,6 +182,20 @@ class Process {
       this.th32ParentProcessID = lppeBuffer.readUInt32LE(0x1c);
       this.th32ProcessID = th32ProcessID;
 
+      const machineBuffer = Buffer.allocUnsafe(0x04);
+      const bIsWow64Process2 = IsWow64Process2(hProcess, ptr(machineBuffer), ptr(machineBuffer, 0x02));
+
+      if (!bIsWow64Process2) {
+        CloseHandle(hProcess);
+        CloseHandle(hSnapshot);
+
+        throw new Win32Error('IsWow64Process2', GetLastError());
+      }
+
+      // pProcessMachine is IMAGE_FILE_MACHINE_UNKNOWN (0) for a native process; a non-zero
+      // WOW64 machine (e.g. IMAGE_FILE_MACHINE_I386) means a 32-bit target with 32-bit pointers.
+      this.is32Bit = machineBuffer.readUInt16LE(0x00) !== 0x0000;
+
       try {
         this.refresh();
       } catch (error) {
@@ -250,6 +267,7 @@ class Process {
 
   public readonly cntThreads: number;
   public readonly hProcess: bigint;
+  public readonly is32Bit: boolean;
   public readonly pcPriClassBase: number;
   public readonly szExeFile: string;
   public readonly th32ParentProcessID: number;
@@ -343,6 +361,10 @@ class Process {
    * ```
    */
   public call<const Signature extends CallSignature>(address: CallPointer, signature: Signature, ...args: CallArguments<Signature>): CallReturn<Signature> {
+    if (this.is32Bit) {
+      throw new Error('Remote call() is not supported on 32-bit (WOW64) targets.');
+    }
+
     if (signature.args.length !== args.length) {
       throw new RangeError(`Expected ${signature.args.length} arguments, received ${args.length}.`);
     }
