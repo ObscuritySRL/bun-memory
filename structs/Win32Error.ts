@@ -50,12 +50,12 @@ class Win32Error extends Error {
    * ```
    */
   constructor(what: string, code: number) {
-    let message = Win32Error.formatMessageWCache.get(code);
+    let message = Win32Error.#formatMessageWCache.get(code);
 
     if (message === undefined) {
       const dwFlags = 0x00001000 /* FORMAT_MESSAGE_FROM_SYSTEM */ | 0x00000200; /* FORMAT_MESSAGE_IGNORE_INSERTS */
       const dwMessageId = code >>> 0;
-      const lpBuffer = Win32Error.scratch4096;
+      const lpBuffer = Win32Error.#scratch4096;
       const nSize = lpBuffer.byteLength / 2;
 
       const tChars = FormatMessageW(dwFlags, null, dwMessageId, 0, ptr(lpBuffer), nSize, null);
@@ -68,7 +68,7 @@ class Win32Error extends Error {
               .trim()
           : 'Unknown error';
 
-      Win32Error.formatMessageWCache.set(code, message);
+      Win32Error.#formatMessageWCache.set(code, message);
     }
 
     super(`${what} failed (${code}): ${message!}`);
@@ -82,15 +82,13 @@ class Win32Error extends Error {
 
   /**
    * Cache of formatted error messages by code.
-   * @private
    */
-  private static readonly formatMessageWCache = new Map<number, string>();
+  static readonly #formatMessageWCache = new Map<number, string>();
 
   /**
    * Static buffer for FormatMessageW calls.
-   * @private
    */
-  private static readonly scratch4096 = Buffer.allocUnsafe(4_096);
+  static readonly #scratch4096 = Buffer.allocUnsafe(4_096);
 }
 
 export default Win32Error;
