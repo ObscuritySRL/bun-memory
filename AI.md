@@ -62,5 +62,6 @@ const client = cs2.modules['client.dll']; // Module: modBaseAddr, modBaseSize, m
 | Types (vectors, Call*, etc.)  | `types/Process.ts`                |
 | Struct views                  | `structs/Module.ts`, `MemoryBasicInformation.ts`, `Scratch.ts`, `Win32Error.ts` |
 | The `.ptr` buffer extension   | `runtime/extensions.ts`           |
-| Runnable usage                | `example/self-process.integration.ts` (also the test suite, `bun run test`) |
+| Runnable usage                | `example/self-process.integration.ts` (the deterministic gate, `bun run test`) |
+| Live-target proof / numbers   | `example/rocket-league.integration.ts` (`bun run test:rocket-league`), `example/benchmark-rocket-league.ts` (`bun run run:benchmark-rocket-league`) — skip/require a running RocketLeague.exe |
 | Backlog / deferred caps       | `TODO.md`                         |
