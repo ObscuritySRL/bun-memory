@@ -262,6 +262,11 @@ class Process {
 
   readonly #Scratch1080 = new Scratch(0x438);
 
+  /**
+   * Reusable, grow-on-demand haystack buffer for pattern() region scans.
+   */
+  #patternHaystack = Buffer.allocUnsafe(0x1000);
+
   static #TextDecoderUTF8 = new TextDecoder('utf-8');
   static #TextEncoderUTF8 = new TextEncoder();
 
@@ -3682,7 +3687,12 @@ class Process {
         continue;
       }
 
-      const haystack = this.buffer(regionStart, regionLength);
+      if (regionLength > this.#patternHaystack.byteLength) {
+        this.#patternHaystack = Buffer.allocUnsafe(regionLength);
+      }
+
+      const haystack = this.#patternHaystack.subarray(0, regionLength);
+      this.read(regionStart, haystack);
 
       const last = regionLength - (needle.length >>> 1);
       let start = haystack.indexOf(anchor.buffer);

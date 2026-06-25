@@ -270,6 +270,16 @@ describe('pointer machinery', () => {
     expect(self.indexOf(needle, at(haystack), haystack.length)).toBe(at(haystack) + 4n);
     expect(self.indexOf(needle, at(haystack), haystack.length, true)).toEqual([at(haystack) + 4n, at(haystack) + 12n]);
   });
+
+  test('pattern matches bytes and wildcards across a region', () => {
+    const buffer = Buffer.alloc(0x100);
+    buffer.set([0xde, 0xad, 0xbe, 0xef], 0x40);
+    const address = at(buffer);
+    expect(self.pattern('deadbeef', address, 0x100)).toBe(address + 0x40n);
+    expect(self.pattern('dead??ef', address, 0x100)).toBe(address + 0x40n);
+    expect(self.pattern('deadbeff', address, 0x100)).toBe(-1n);
+    expect(self.pattern('deadbeef', address, 0x100, true)).toEqual([address + 0x40n]);
+  });
 });
 
 describe('engine containers', () => {
