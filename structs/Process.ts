@@ -2,7 +2,7 @@ import '../runtime/extensions';
 
 import { CString, FFIType, ptr } from 'bun:ffi';
 
-import Kernel32, { INVALID_HANDLE_VALUE, MemoryAllocationType, MemoryProtection, ProcessAccessRights, ToolhelpSnapshotFlags } from '@bun-win32/kernel32';
+import Kernel32, { MemoryAllocationType, MemoryProtection, ProcessAccessRights, ToolhelpSnapshotFlags } from '@bun-win32/kernel32';
 
 import type { BufferLike, CallArguments, CallPointer, CallReturn, CallSignature, Point, QAngle, Quaternion, RGB, RGBA, UPtr, UPtrArray, Vector2, Vector3, Vector4 } from '../types/Process';
 import MemoryBasicInformation from './MemoryBasicInformation';
@@ -94,6 +94,7 @@ const FFITypeByName: Readonly<Record<string, FFIType>> = {
 };
 
 const INFINITE = 0xffff_ffff;
+const INVALID_HANDLE_VALUE = 0xffff_ffff_ffff_ffffn;
 const WAIT_FAILED = 0xffff_ffff;
 const WAIT_OBJECT_0 = 0x0000_0000;
 
@@ -130,7 +131,7 @@ class Process {
 
     const hSnapshot = CreateToolhelp32Snapshot(dwFlags, 0);
 
-    if (hSnapshot === -1n) {
+    if (hSnapshot === INVALID_HANDLE_VALUE) {
       throw new Win32Error('CreateToolhelp32Snapshot', GetLastError());
     }
 
@@ -178,7 +179,14 @@ class Process {
       this.th32ParentProcessID = lppeBuffer.readUInt32LE(0x1c);
       this.th32ProcessID = th32ProcessID;
 
-      this.refresh();
+      try {
+        this.refresh();
+      } catch (error) {
+        CloseHandle(hProcess);
+        CloseHandle(hSnapshot);
+
+        throw error;
+      }
 
       CloseHandle(hSnapshot);
 
@@ -213,6 +221,11 @@ class Process {
     PatternTest: /^(?=.*[0-9A-Fa-f]{2})(?:\*{2}|\?{2}|[0-9A-Fa-f]{2})+$/,
     ReplaceTrailingNull: /\0+$/,
   };
+
+  /**
+   * Whether close() has already released the process handle.
+   */
+  #closed = false;
 
   /**
    * Map of loaded modules in the process, keyed by module name.
@@ -577,6 +590,12 @@ class Process {
    * ```
    */
   public close(): void {
+    if (this.#closed) {
+      return;
+    }
+
+    this.#closed = true;
+
     CloseHandle(this.hProcess);
 
     return;

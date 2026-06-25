@@ -348,3 +348,12 @@ describe('remote call', () => {
     self.free(fn);
   });
 });
+
+describe('reliability', () => {
+  test('close() and dispose are idempotent (no double-close)', () => {
+    const instance = new Process(process.pid);
+    instance.close();
+    expect(() => instance.close()).not.toThrow();
+    expect(() => instance[Symbol.dispose]()).not.toThrow();
+  });
+});
