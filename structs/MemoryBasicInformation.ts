@@ -2,10 +2,7 @@ import { Buffer } from 'node:buffer';
 
 import { type Pointer, ptr } from 'bun:ffi';
 
-import Kernel32 from '@bun-win32/kernel32';
 import type { MemoryAllocationType, MemoryProtection } from '@bun-win32/kernel32';
-
-const { VirtualQueryEx } = Kernel32;
 
 /**
  * Typed view over a 48-byte MEMORY_BASIC_INFORMATION buffer (x64).
@@ -73,23 +70,6 @@ class MemoryBasicInformation {
 
   get Type(): number {
     return this.#cached ? (this.#Type ??= this.buffer.readUInt32LE(0x28)) : this.buffer.readUInt32LE(0x28);
-  }
-
-  static *query(hProcess: bigint, lpAddress: bigint = 0n): Generator<MemoryBasicInformation> {
-    const mbi = new MemoryBasicInformation();
-    const dwLength = 0x30n; /* sizeof(MEMORY_BASIC_INFORMATION) */
-
-    const bVirtualQueryEx = VirtualQueryEx(hProcess, lpAddress, mbi.ptr, dwLength);
-
-    if (!bVirtualQueryEx) {
-      return;
-    }
-
-    do {
-      yield new MemoryBasicInformation(Buffer.from(mbi.buffer));
-
-      lpAddress = mbi.BaseAddress + mbi.RegionSize;
-    } while (VirtualQueryEx(hProcess, lpAddress, mbi.ptr, dwLength));
   }
 }
 

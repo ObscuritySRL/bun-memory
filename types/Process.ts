@@ -45,16 +45,6 @@ export type PatternWildcard = '**' | '??';
 export type PatternByte = `${HexChar}${HexChar}` | PatternWildcard;
 
 /**
- * Represents a contiguous vector of unsigned 32-bit integers.
- * @example
- * ```ts
- * const cs2 = new Process('cs2.exe');
- * const myVector = cs2.networkUtlVector(0x12345678n);
- * ```
- */
-export type NetworkUtlVector = Uint32Array;
-
-/**
  * Represents a 2D point.
  * @property x X coordinate.
  * @property y Y coordinate.
@@ -155,31 +145,6 @@ export type RGBA = {
   b: number;
   /** Alpha. */
   a: number;
-};
-
-/**
- * Represents a memory region.
- * @property base Base address.
- * @property protect Protection flags.
- * @property size Size in bytes.
- * @property state State.
- * @property type Type.
- * @example
- * ```ts
- * // Used internally by Process
- * ```
- */
-export type Region = {
-  /** Base address. */
-  base: bigint;
-  /** Protection flags. */
-  protect: number;
-  /** Size in bytes. */
-  size: bigint;
-  /** State. */
-  state: number;
-  /** Type. */
-  type: number;
 };
 
 /**
