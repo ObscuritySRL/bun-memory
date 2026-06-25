@@ -5,11 +5,14 @@ Maintained alongside the code (see prompts/BUILD.md). `[x]` done this session; `
 
 ## Flagged — upstream / release (never silent)
 
-- [ ] **@bun-win32/kernel32 needs republish.** `CreateRemoteThread.lpStartAddress` was typed
-  `FFIType.ptr`/`Pointer`, but a remote thread's start routine is a remote address (`u64`/`bigint`).
-  Fixed in the bun-win32 source (committed there) + the unused `COORD` import dropped; the bun-memory
-  `node_modules` copy is locally patched. Republish kernel32 (>=1.0.27) and bump the dep range so the
-  patch is no longer needed. `CreateRemoteThreadEx` has the same `lpStartAddress: ptr` issue upstream.
+- [ ] **@bun-win32/core + kernel32 need republish.** The bun-win32 source now types every kernel32
+  parameter with its real Microsoft type (committed there): `LPTHREAD_START_ROUTINE` is a per-function
+  generic (`CreateThread<Pointer>` / `CreateRemoteThread[Ex]<bigint>`), and all 60 bare `: bigint` are
+  retyped — `SIZE_T`/`ULONG_PTR` for sizes/counts; `LPVOID`/`LPCVOID`/`PVOID`<`bigint`> for by-value
+  addresses (the core void-pointer aliases were made generic, default `Pointer`); `PSIZE_T | NULL` for
+  the three `SIZE_T*` out-params. The bun-memory `node_modules` copy is locally patched to match, and
+  `Process.ts` now passes `null` (not `0x00n`) for the RPM/WPM out-param — which REQUIRES the
+  `PSIZE_T` retype. Republish core + kernel32 and bump the dep ranges so the patch can be dropped.
 
 ## Done this session
 

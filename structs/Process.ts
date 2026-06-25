@@ -703,7 +703,7 @@ class Process {
     const lpBaseAddress = address;
     const lpBuffer = ptr(scratch);
     const nSize = BigInt(scratch.byteLength);
-    const numberOfBytesRead = 0x00n;
+    const numberOfBytesRead = null;
 
     const bReadProcessMemory = ReadProcessMemory(hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesRead);
 
@@ -784,7 +784,7 @@ class Process {
     const lpBaseAddress = address;
     const lpBuffer = ptr(scratch);
     const nSize = BigInt(scratch.byteLength);
-    const numberOfBytesWritten = 0x00n;
+    const numberOfBytesWritten = null;
 
     if (!force) {
       const bWriteProcessMemory = WriteProcessMemory(hProcess, lpBaseAddress, lpBuffer, nSize, numberOfBytesWritten);
@@ -844,7 +844,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch1.ptr, 0x01n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch1.ptr, 0x01n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -875,7 +875,7 @@ class Process {
   public bits(address: bigint, startBit: number, bitCount: number): number {
     const { hProcess } = this;
 
-    const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4.ptr, 0x04n, 0x00n);
+    const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4.ptr, 0x04n, null);
 
     if (!bReadProcessMemory) {
       throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -973,7 +973,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch2.ptr, 0x02n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch2.ptr, 0x02n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -1040,7 +1040,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4.ptr, 0x04n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4.ptr, 0x04n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -1107,7 +1107,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8.ptr, 0x08n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8.ptr, 0x08n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -1174,7 +1174,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch2.ptr, 0x02n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch2.ptr, 0x02n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -1241,7 +1241,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4.ptr, 0x04n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4.ptr, 0x04n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -1308,7 +1308,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8.ptr, 0x08n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8.ptr, 0x08n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -1375,7 +1375,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch1.ptr, 0x01n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch1.ptr, 0x01n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -1541,7 +1541,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8.ptr, 0x08n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8.ptr, 0x08n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -1658,7 +1658,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch12.ptr, 0x0cn, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch12.ptr, 0x0cn, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -1779,7 +1779,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch16.ptr, 0x10n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch16.ptr, 0x10n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -1904,7 +1904,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch3.ptr, 0x03n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch3.ptr, 0x03n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -1974,7 +1974,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4.ptr, 0x04n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4.ptr, 0x04n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -2645,7 +2645,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch2.ptr, 0x02n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch2.ptr, 0x02n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -2712,7 +2712,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4.ptr, 0x04n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4.ptr, 0x04n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -2779,7 +2779,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8.ptr, 0x08n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8.ptr, 0x08n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -2846,7 +2846,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch1.ptr, 0x01n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch1.ptr, 0x01n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -3142,7 +3142,7 @@ class Process {
   public vFunction(address: bigint, index: number): bigint {
     const { hProcess } = this;
 
-    const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8.ptr, 0x08n, 0x00n);
+    const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8.ptr, 0x08n, null);
 
     if (!bReadProcessMemory) {
       throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -3150,7 +3150,7 @@ class Process {
 
     const vtablePtr = this.#Scratch8.u64[0x00]!;
 
-    const bReadProcessMemory2 = !!ReadProcessMemory(hProcess, vtablePtr + BigInt(index * 0x08), this.#Scratch8.ptr, 0x08n, 0x00n);
+    const bReadProcessMemory2 = !!ReadProcessMemory(hProcess, vtablePtr + BigInt(index * 0x08), this.#Scratch8.ptr, 0x08n, null);
 
     if (!bReadProcessMemory2) {
       throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -3282,7 +3282,7 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch12.ptr, 0x0cn, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch12.ptr, 0x0cn, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
@@ -3579,7 +3579,7 @@ class Process {
     const last = length - 1;
 
     for (let i = 0; i < last; i++) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address + offsets[i]!, this.#Scratch8.ptr, 0x08n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address + offsets[i]!, this.#Scratch8.ptr, 0x08n, null);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
