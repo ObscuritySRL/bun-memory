@@ -83,6 +83,13 @@ describe('scalars', () => {
     expect(buffer.readDoubleLE(0)).toBe(-9.5);
   });
 
+  test('f16 (half precision)', () => {
+    const buffer = new Float16Array([1.5]);
+    expect(self.f16(at(buffer))).toBe(1.5);
+    self.f16(at(buffer), -2.25);
+    expect(buffer[0]).toBe(-2.25);
+  });
+
   test('uPtr (pointer-sized) forwards to u64', () => {
     const buffer = Buffer.alloc(8);
     buffer.writeBigUInt64LE(0x7ff012340000n, 0);
@@ -138,6 +145,14 @@ describe('typed arrays', () => {
     const destination = new Float32Array(3);
     self.f32Array(at(destination), new Float32Array([9, 8, 7]));
     expect([...destination]).toEqual([9, 8, 7]);
+  });
+
+  test('f16Array read/write', () => {
+    const source = new Float16Array([0.5, -1, 2, 4]);
+    expect([...self.f16Array(at(source), 4)]).toEqual([0.5, -1, 2, 4]);
+    const destination = new Float16Array(2);
+    self.f16Array(at(destination), new Float16Array([1.5, -0.5]));
+    expect([...destination]).toEqual([1.5, -0.5]);
   });
 
   test('u32Array read/write', () => {

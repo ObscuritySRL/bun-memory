@@ -930,6 +930,73 @@ class Process {
   }
 
   /**
+   * Reads or writes a 16-bit float (half precision).
+   * @param address Address to access.
+   * @param value Optional value to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns The half at address, or this instance if writing.
+   * @example
+   * ```ts
+   * const cs2 = new Process('cs2.exe');
+   * const myHalf = cs2.f16(0x12345678n);
+   * cs2.f16(0x12345678n, 1.5);
+   * ```
+   */
+  public f16(address: bigint): number;
+  public f16(address: bigint, value: number, force?: boolean): this;
+  public f16(address: bigint, value?: number, force?: boolean): number | this {
+    const { hProcess } = this;
+
+    if (value === undefined) {
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch2.ptr, 0x02n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
+      }
+
+      return this.#Scratch2.f16[0x00]!;
+    }
+
+    this.#Scratch2.f16[0x00] = value;
+
+    this.write(address, this.#Scratch2.f16, force);
+
+    return this;
+  }
+
+  /**
+   * Reads or writes a Float16Array.
+   * @param address Address to access.
+   * @param lengthOrValues Length to read or Float16Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns Float16Array read or this instance if writing.
+   * @example
+   * ```ts
+   * const cs2 = new Process('cs2.exe');
+   * const myArray = cs2.f16Array(0x12345678n, 3);
+   * cs2.f16Array(0x12345678n, new Float16Array([1, 2, 3]));
+   * ```
+   */
+  public f16Array(address: bigint, length: number): Float16Array;
+  public f16Array(address: bigint, values: Float16Array, force?: boolean): this;
+  public f16Array(address: bigint, lengthOrValues: Float16Array | number, force?: boolean): Float16Array | this {
+    if (typeof lengthOrValues === 'number') {
+      const length = lengthOrValues;
+      const scratch = new Float16Array(length);
+
+      this.read(address, scratch);
+
+      return scratch;
+    }
+
+    const values = lengthOrValues;
+
+    this.write(address, values, force);
+
+    return this;
+  }
+
+  /**
    * Reads or writes a 32-bit float.
    * @param address Address to access.
    * @param value Optional value to write.
