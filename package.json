@@ -28,7 +28,6 @@
   },
   "files": [
     "index.ts",
-    "example/*.ts",
     "runtime/*.ts",
     "structs/*.ts",
     "types/*.ts",
