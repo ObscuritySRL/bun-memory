@@ -1,8 +1,10 @@
-import { dlopen, FFIType } from 'bun:ffi';
+import { ptr } from 'bun:ffi';
 
-const { symbols: Kernel32 } = dlopen('kernel32.dll', {
-  FormatMessageW: { args: [FFIType.u32, FFIType.u64, FFIType.u32, FFIType.u32, FFIType.ptr, FFIType.u32, FFIType.u64], returns: FFIType.u32 },
-});
+import Kernel32 from '@bun-win32/kernel32';
+
+Kernel32.Preload(['FormatMessageW']);
+
+const { FormatMessageW } = Kernel32;
 
 /**
  * Represents a Windows (Win32) system error.
@@ -56,7 +58,7 @@ class Win32Error extends Error {
       const lpBuffer = Win32Error.scratch4096;
       const nSize = lpBuffer.byteLength / 2;
 
-      const tChars = Kernel32.FormatMessageW(dwFlags, 0n, dwMessageId, 0, lpBuffer, nSize, 0n);
+      const tChars = FormatMessageW(dwFlags, null, dwMessageId, 0, ptr(lpBuffer), nSize, null);
 
       message =
         tChars !== 0

@@ -1,7 +1,12 @@
-import type Process from './Process';
+import { Buffer } from 'node:buffer';
+
+const ReplaceTrailingNull = /\0+$/;
 
 /**
- * Represents a loaded module in a process.
+ * Typed view over a 1080-byte MODULEENTRY32W buffer (x64).
+ *
+ * Properties are lazily parsed from the buffer on first access,
+ * then the getter is replaced with a direct value property.
  *
  * @example
  * ```ts
@@ -11,30 +16,59 @@ import type Process from './Process';
  * ```
  */
 class Module {
-  /**
-   * Creates a new Module instance.
-   * @param process Parent process instance.
-   * @param hModule Module handle.
-   * @param modBaseAddr Base address of the module.
-   * @param modBaseSize Module size in bytes.
-   * @param szExePath Full path to the module.
-   * @param szModule Module filename.
-   */
-  constructor(
-    public readonly process: Process,
-    public readonly hModule: bigint,
-    public readonly modBaseAddr: bigint,
-    public readonly modBaseSize: number,
-    public readonly szExePath: string,
-    public readonly szModule: string,
-  ) {
-    this.modEndAddr = modBaseAddr + BigInt(modBaseSize);
+  readonly #buffer: Buffer;
+
+  constructor(buffer: Buffer) {
+    this.#buffer = buffer;
   }
 
-  /**
-   * End address of the module (modBaseAddr + modBaseSize).
-   */
-  public readonly modEndAddr: bigint;
+  get hModule(): bigint {
+    const value = this.#buffer.readBigUInt64LE(0x28);
+
+    Object.defineProperty(this, 'hModule', { configurable: false, value });
+
+    return value;
+  }
+
+  get modBaseAddr(): bigint {
+    const value = this.#buffer.readBigUInt64LE(0x18);
+
+    Object.defineProperty(this, 'modBaseAddr', { configurable: false, value });
+
+    return value;
+  }
+
+  get modBaseSize(): number {
+    const value = this.#buffer.readUInt32LE(0x20);
+
+    Object.defineProperty(this, 'modBaseSize', { configurable: false, value });
+
+    return value;
+  }
+
+  get modEndAddr(): bigint {
+    const value = this.modBaseAddr + BigInt(this.modBaseSize);
+
+    Object.defineProperty(this, 'modEndAddr', { configurable: false, value });
+
+    return value;
+  }
+
+  get szExePath(): string {
+    const value = this.#buffer.toString('utf16le', 0x230, 0x438).replace(ReplaceTrailingNull, '');
+
+    Object.defineProperty(this, 'szExePath', { configurable: false, value });
+
+    return value;
+  }
+
+  get szModule(): string {
+    const value = this.#buffer.toString('utf16le', 0x30, 0x230).replace(ReplaceTrailingNull, '');
+
+    Object.defineProperty(this, 'szModule', { configurable: false, value });
+
+    return value;
+  }
 }
 
 export default Module;

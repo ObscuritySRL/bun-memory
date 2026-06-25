@@ -1,16 +1,19 @@
 import '../runtime/extensions';
 
-import { CString, ptr } from 'bun:ffi';
+import { CString, FFIType, ptr } from 'bun:ffi';
 
-import Kernel32, { INVALID_HANDLE_VALUE } from 'bun-kernel32';
+import Kernel32, { INVALID_HANDLE_VALUE, MemoryAllocationType, MemoryProtection, ProcessAccessRights, ToolhelpSnapshotFlags } from '@bun-win32/kernel32';
 
-import type { Point, QAngle, Quaternion, RGB, RGBA, Scratch, UPtr, UPtrArray, Vector2, Vector3, Vector4 } from '../types/Process';
+import type { BufferLike, CallArguments, CallPointer, CallReturn, CallSignature, Point, QAngle, Quaternion, RGB, RGBA, UPtr, UPtrArray, Vector2, Vector3, Vector4 } from '../types/Process';
+import MemoryBasicInformation from './MemoryBasicInformation';
 import Module from './Module';
+import Scratch from './Scratch';
 import Win32Error from './Win32Error';
 
 // Preload FFI symbols to avoid lazy-loading overhead during hot paths
 Kernel32.Preload([
   'CloseHandle',
+  'CreateRemoteThread',
   'CreateToolhelp32Snapshot',
   'GetLastError',
   'Module32FirstW',
@@ -22,10 +25,77 @@ Kernel32.Preload([
   'VirtualAllocEx',
   'VirtualFreeEx',
   'VirtualProtectEx',
+  'VirtualQueryEx',
+  'WaitForSingleObject',
   'WriteProcessMemory',
 ]);
 
-const { CloseHandle, CreateToolhelp32Snapshot, GetLastError, Module32FirstW, Module32NextW, OpenProcess, Process32FirstW, Process32NextW, ReadProcessMemory, VirtualAllocEx, VirtualFreeEx, VirtualProtectEx, WriteProcessMemory } = Kernel32;
+const {
+  CloseHandle,
+  CreateRemoteThread,
+  CreateToolhelp32Snapshot,
+  GetLastError,
+  Module32FirstW,
+  Module32NextW,
+  OpenProcess,
+  Process32FirstW,
+  Process32NextW,
+  ReadProcessMemory,
+  VirtualAllocEx,
+  VirtualFreeEx,
+  VirtualProtectEx,
+  VirtualQueryEx,
+  WaitForSingleObject,
+  WriteProcessMemory,
+} = Kernel32;
+
+const FFITypeByName: Readonly<Record<string, FFIType>> = {
+  bool: FFIType.bool,
+  buffer: FFIType.buffer,
+  c_int: FFIType.i32,
+  c_uint: FFIType.u32,
+  callback: FFIType.function,
+  char: FFIType.char,
+  'char*': FFIType.ptr,
+  cstring: FFIType.cstring,
+  double: FFIType.f64,
+  f32: FFIType.f32,
+  f64: FFIType.f64,
+  float: FFIType.f32,
+  fn: FFIType.function,
+  function: FFIType.function,
+  i16: FFIType.i16,
+  i32: FFIType.i32,
+  i64: FFIType.i64,
+  i64_fast: FFIType.i64_fast,
+  i8: FFIType.i8,
+  int: FFIType.i32,
+  int16_t: FFIType.i16,
+  int32_t: FFIType.i32,
+  int64_t: FFIType.i64,
+  int8_t: FFIType.i8,
+  isize: FFIType.i64,
+  napi_env: FFIType.napi_env,
+  napi_value: FFIType.napi_value,
+  pointer: FFIType.ptr,
+  ptr: FFIType.ptr,
+  u16: FFIType.u16,
+  u32: FFIType.u32,
+  u64: FFIType.u64,
+  u64_fast: FFIType.u64_fast,
+  u8: FFIType.u8,
+  uint16_t: FFIType.u16,
+  uint32_t: FFIType.u32,
+  uint64_t: FFIType.u64,
+  uint8_t: FFIType.u8,
+  usize: FFIType.u64,
+  void: FFIType.void,
+  'void*': FFIType.ptr,
+};
+
+const INFINITE = 0xffff_ffff;
+const WAIT_FAILED = 0xffff_ffff;
+const WAIT_OBJECT_0 = 0x0000_0000;
 
 /**
  * Provides cross-process memory manipulation for native applications.
@@ -36,8 +106,6 @@ const { CloseHandle, CreateToolhelp32Snapshot, GetLastError, Module32FirstW, Mod
  *
  * @todo Add support for 32 or 64-bit processes using IsWow64Process2 (Windows 10+).
  * @todo When adding 32-bit support, several u64 will need changed to u64_fast.
- * @todo Add memory region query using VirtualQueryEx (find next readable region, enumerate regions).
- * @todo Function hooking - VTable hooks (pointer swaps), IAT hooks (PE parsing), inline hooks (x64 disassembler).
  *
  * @example
  * ```ts
@@ -58,7 +126,7 @@ class Process {
    * ```
    */
   constructor(identifier: number | string) {
-    const dwFlags = 0x00000002; /* TH32CS_SNAPPROCESS */
+    const dwFlags = ToolhelpSnapshotFlags.TH32CS_SNAPPROCESS;
 
     const hSnapshot = CreateToolhelp32Snapshot(dwFlags, 0);
 
@@ -90,7 +158,7 @@ class Process {
         continue;
       }
 
-      const desiredAccess = 0x001f0fff; /* PROCESS_ALL_ACCESS */
+      const desiredAccess = ProcessAccessRights.PROCESS_ALL_ACCESS;
       const inheritHandle = 0;
 
       const hProcess = OpenProcess(desiredAccess, inheritHandle, th32ProcessID);
@@ -152,54 +220,20 @@ class Process {
   #modules: Readonly<Record<string, Module>>;
 
   /**
-   * Scratch buffers and typed views for temporary FFI reads/writes.
-   * Pointer values are pre-cached to eliminate property access overhead in hot paths.
+   * Scratch buffers for temporary FFI reads/writes.
    */
-  readonly #Scratch1 = new Uint8Array(0x01);
-  readonly #Scratch1Int8Array = new Int8Array(this.#Scratch1.buffer, this.#Scratch1.byteOffset, 0x01);
-  readonly #Scratch1Ptr = this.#Scratch1.ptr;
+  readonly #Scratch1 = new Scratch(0x01);
+  readonly #Scratch2 = new Scratch(0x02);
+  readonly #Scratch3 = new Scratch(0x03);
+  readonly #Scratch4 = new Scratch(0x04);
+  readonly #Scratch8 = new Scratch(0x08);
+  readonly #Scratch12 = new Scratch(0x0c);
+  readonly #Scratch16 = new Scratch(0x10);
 
-  readonly #Scratch2 = new Uint8Array(0x02);
-  readonly #Scratch2Int16Array = new Int16Array(this.#Scratch2.buffer, this.#Scratch2.byteOffset, 0x01);
-  readonly #Scratch2Ptr = this.#Scratch2.ptr;
-  readonly #Scratch2Uint16Array = new Uint16Array(this.#Scratch2.buffer, this.#Scratch2.byteOffset, 0x01);
-
-  readonly #Scratch3 = new Uint8Array(0x03);
-
-  readonly #Scratch4 = new Uint8Array(0x04);
-  readonly #Scratch4Float32Array = new Float32Array(this.#Scratch4.buffer, this.#Scratch4.byteOffset, 0x01);
-  readonly #Scratch4Int32Array = new Int32Array(this.#Scratch4.buffer, this.#Scratch4.byteOffset, 0x01);
-  readonly #Scratch4Ptr = this.#Scratch4.ptr;
-  readonly #Scratch4Uint32Array = new Uint32Array(this.#Scratch4.buffer, this.#Scratch4.byteOffset, 0x01);
-
-  readonly #Scratch8 = new Uint8Array(0x08);
-  readonly #Scratch8BigInt64Array = new BigInt64Array(this.#Scratch8.buffer, this.#Scratch8.byteOffset, 0x01);
-  readonly #Scratch8BigUint64Array = new BigUint64Array(this.#Scratch8.buffer, this.#Scratch8.byteOffset, 0x01);
-  readonly #Scratch8Float32Array = new Float32Array(this.#Scratch8.buffer, this.#Scratch8.byteOffset, 0x02);
-  readonly #Scratch8Float64Array = new Float64Array(this.#Scratch8.buffer, this.#Scratch8.byteOffset, 0x01);
-  readonly #Scratch8Ptr = this.#Scratch8.ptr;
-
-  readonly #Scratch12 = new Uint8Array(0x0c);
-  readonly #Scratch12Float32Array = new Float32Array(this.#Scratch12.buffer, this.#Scratch12.byteOffset, 0x03);
-  readonly #Scratch12Ptr = this.#Scratch12.ptr;
-
-  readonly #Scratch16 = new Uint8Array(0x10);
-  readonly #Scratch16Float32Array = new Float32Array(this.#Scratch16.buffer, this.#Scratch16.byteOffset, 0x04);
-  readonly #Scratch16Ptr = this.#Scratch16.ptr;
-
-  // Reserved for future remote code execution features
-  readonly #Scratch48 = new Uint8Array([
-    0x48, 0xb9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x48, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x48, 0x83, 0xec, 0x28, 0xff, 0xd0, 0x48, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x48, 0x83, 0xc4,
-    0x28, 0xc3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  ]);
-
-  // Reserved for future features
-  readonly #Scratch112 = new Uint8Array(0x70);
-
-  readonly #Scratch1080 = Buffer.allocUnsafe(0x438 /* sizeof(MODULEENTRY32W) */);
+  readonly #Scratch1080 = new Scratch(0x438);
 
   static #TextDecoderUTF8 = new TextDecoder('utf-8');
-  static #TextEncoderUTF8 = new TextEncoder('utf-8');
+  static #TextEncoderUTF8 = new TextEncoder();
 
   public readonly cntThreads: number;
   public readonly hProcess: bigint;
@@ -260,7 +294,7 @@ class Process {
    * const ptr = cs2.alloc(0x100);
    * ```
    */
-  public alloc(length: number, protect: number = 0x04): bigint {
+  public alloc(length: number, protect: number = MemoryProtection.PAGE_READWRITE): bigint {
     const { hProcess } = this;
 
     if (length <= 0) {
@@ -268,7 +302,7 @@ class Process {
     }
 
     const dwSize = BigInt(length);
-    const flAllocationType = 0x3000; /* MEM_COMMIT | MEM_RESERVE */
+    const flAllocationType = MemoryAllocationType.MEM_COMMIT | MemoryAllocationType.MEM_RESERVE;
     const flProtect = protect;
     const lpAddress = 0n;
 
@@ -279,6 +313,259 @@ class Process {
     }
 
     return lpBaseAddress;
+  }
+
+  /**
+   * Calls a native function pointer inside the remote process using a Bun FFI-style signature.
+   * @param address Function pointer to call.
+   * @param signature FFI argument and return signature.
+   * @param args Arguments matching the signature.
+   * @returns The function result.
+   * @example
+   * ```ts
+   * import { FFIType } from 'bun:ffi';
+   *
+   * const signature = { args: [FFIType.u32], returns: FFIType.void } as const;
+   * cs2.call(0x12345678n, signature, 0x123);
+   * ```
+   */
+  public call<const Signature extends CallSignature>(address: CallPointer, signature: Signature, ...args: CallArguments<Signature>): CallReturn<Signature> {
+    if (signature.args.length !== args.length) {
+      throw new RangeError(`Expected ${signature.args.length} arguments, received ${args.length}.`);
+    }
+
+    if (args.length > 0x04) {
+      throw new RangeError('Remote calls support up to 4 integer or pointer arguments.');
+    }
+
+    const returns = typeof signature.returns === 'number' ? signature.returns : FFITypeByName[signature.returns];
+
+    if (returns === undefined) {
+      throw new TypeError(`Unsupported FFI return type: ${signature.returns}.`);
+    }
+
+    switch (returns) {
+      case FFIType.bool:
+      case FFIType.char:
+      case FFIType.cstring:
+      case FFIType.function:
+      case FFIType.i16:
+      case FFIType.i32:
+      case FFIType.i64:
+      case FFIType.i64_fast:
+      case FFIType.i8:
+      case FFIType.ptr:
+      case FFIType.u16:
+      case FFIType.u32:
+      case FFIType.u64:
+      case FFIType.u64_fast:
+      case FFIType.u8:
+      case FFIType.void:
+        break;
+
+      default:
+        throw new TypeError(`Unsupported remote call return type: ${String(FFIType[returns] ?? returns)}.`);
+    }
+
+    const callArguments = new Array<bigint>(args.length);
+
+    for (let index = 0; index < args.length; index++) {
+      const signatureArgument = signature.args[index]!;
+      const argumentType = typeof signatureArgument === 'number' ? signatureArgument : FFITypeByName[signatureArgument];
+
+      if (argumentType === undefined) {
+        throw new TypeError(`Unsupported FFI argument type: ${signatureArgument}.`);
+      }
+
+      switch (argumentType) {
+        case FFIType.bool:
+        case FFIType.char:
+        case FFIType.cstring:
+        case FFIType.function:
+        case FFIType.i16:
+        case FFIType.i32:
+        case FFIType.i64:
+        case FFIType.i64_fast:
+        case FFIType.i8:
+        case FFIType.ptr:
+        case FFIType.u16:
+        case FFIType.u32:
+        case FFIType.u64:
+        case FFIType.u64_fast:
+        case FFIType.u8:
+          break;
+
+        default:
+          throw new TypeError(`Unsupported remote call argument type: ${String(FFIType[argumentType] ?? argumentType)}.`);
+      }
+
+      const argument = args[index];
+
+      if (typeof argument === 'bigint') {
+        callArguments[index] = argument;
+      } else if (typeof argument === 'boolean') {
+        callArguments[index] = argument ? 1n : 0n;
+      } else if (typeof argument === 'number') {
+        if (!Number.isFinite(argument)) {
+          throw new TypeError('Remote call number arguments must be integers.');
+        }
+
+        if (Number.isInteger(argument)) {
+          callArguments[index] = BigInt(argument);
+        } else if (argumentType === FFIType.cstring || argumentType === FFIType.function || argumentType === FFIType.ptr) {
+          this.#Scratch8.buffer.writeDoubleLE(argument, 0x00);
+          callArguments[index] = this.#Scratch8.buffer.readBigUInt64LE(0x00);
+        } else {
+          throw new TypeError('Remote call number arguments must be integers.');
+        }
+      } else if (argument === null) {
+        callArguments[index] = 0n;
+      } else {
+        throw new TypeError('Remote call arguments must be integer, pointer, boolean, or null values.');
+      }
+    }
+
+    let functionAddress: bigint;
+
+    if (typeof address === 'bigint') {
+      functionAddress = address;
+    } else if (Number.isInteger(address)) {
+      functionAddress = BigInt(address);
+    } else {
+      this.#Scratch8.buffer.writeDoubleLE(address, 0x00);
+      functionAddress = this.#Scratch8.buffer.readBigUInt64LE(0x00);
+    }
+
+    const resultOffset = args.length * 0x0a + 0x1f;
+    const shellcodeLength = resultOffset + 0x08;
+    const remoteCallAddress = this.alloc(shellcodeLength, MemoryProtection.PAGE_EXECUTE_READWRITE);
+
+    try {
+      const resultAddress = remoteCallAddress + BigInt(resultOffset);
+      const shellcode = Buffer.alloc(shellcodeLength);
+      let offset = 0x00;
+
+      for (let index = 0; index < callArguments.length; index++) {
+        switch (index) {
+          case 0x00:
+            shellcode[offset++] = 0x48;
+            shellcode[offset++] = 0xb9;
+            break;
+
+          case 0x01:
+            shellcode[offset++] = 0x48;
+            shellcode[offset++] = 0xba;
+            break;
+
+          case 0x02:
+            shellcode[offset++] = 0x49;
+            shellcode[offset++] = 0xb8;
+            break;
+
+          case 0x03:
+            shellcode[offset++] = 0x49;
+            shellcode[offset++] = 0xb9;
+            break;
+        }
+
+        shellcode.writeBigUInt64LE(BigInt.asUintN(0x40, callArguments[index]!), offset);
+        offset += 0x08;
+      }
+
+      shellcode[offset++] = 0x48;
+      shellcode[offset++] = 0xb8;
+      shellcode.writeBigUInt64LE(BigInt.asUintN(0x40, functionAddress), offset);
+      offset += 0x08;
+
+      shellcode[offset++] = 0x48;
+      shellcode[offset++] = 0x83;
+      shellcode[offset++] = 0xec;
+      shellcode[offset++] = 0x28;
+
+      shellcode[offset++] = 0xff;
+      shellcode[offset++] = 0xd0;
+
+      shellcode[offset++] = 0x48;
+      shellcode[offset++] = 0xa3;
+      shellcode.writeBigUInt64LE(BigInt.asUintN(0x40, resultAddress), offset);
+      offset += 0x08;
+
+      shellcode[offset++] = 0x48;
+      shellcode[offset++] = 0x83;
+      shellcode[offset++] = 0xc4;
+      shellcode[offset++] = 0x28;
+
+      shellcode[offset++] = 0xc3;
+
+      this.write(remoteCallAddress, shellcode);
+
+      const hThread = CreateRemoteThread(this.hProcess, null, 0n, remoteCallAddress, 0n, 0x00, null);
+
+      if (hThread === 0n) {
+        throw new Win32Error('CreateRemoteThread', GetLastError());
+      }
+
+      try {
+        const waitResult = WaitForSingleObject(hThread, INFINITE);
+
+        if (waitResult === WAIT_FAILED) {
+          throw new Win32Error('WaitForSingleObject', GetLastError());
+        }
+
+        if (waitResult !== WAIT_OBJECT_0) {
+          throw new Error(`WaitForSingleObject returned ${waitResult}.`);
+        }
+      } finally {
+        CloseHandle(hThread);
+      }
+
+      if (returns === FFIType.void) {
+        return undefined as CallReturn<Signature>;
+      }
+
+      this.read(resultAddress, this.#Scratch8.buffer);
+
+      const result = this.#Scratch8.buffer.readBigUInt64LE(0x00);
+
+      switch (returns) {
+        case FFIType.bool:
+          return (result !== 0n) as CallReturn<Signature>;
+
+        case FFIType.char:
+        case FFIType.i8:
+          return Number(BigInt.asIntN(0x08, result)) as CallReturn<Signature>;
+
+        case FFIType.i16:
+          return Number(BigInt.asIntN(0x10, result)) as CallReturn<Signature>;
+
+        case FFIType.i32:
+          return Number(BigInt.asIntN(0x20, result)) as CallReturn<Signature>;
+
+        case FFIType.i64:
+        case FFIType.i64_fast:
+          return BigInt.asIntN(0x40, result) as CallReturn<Signature>;
+
+        case FFIType.u8:
+          return Number(BigInt.asUintN(0x08, result)) as CallReturn<Signature>;
+
+        case FFIType.u16:
+          return Number(BigInt.asUintN(0x10, result)) as CallReturn<Signature>;
+
+        case FFIType.u32:
+          return Number(BigInt.asUintN(0x20, result)) as CallReturn<Signature>;
+
+        case FFIType.cstring:
+        case FFIType.function:
+        case FFIType.ptr:
+        case FFIType.u64:
+        case FFIType.u64_fast:
+          return result as CallReturn<Signature>;
+      }
+
+      throw new TypeError(`Unsupported remote call return type: ${String(FFIType[returns] ?? returns)}.`);
+    } finally {
+      this.free(remoteCallAddress);
+    }
   }
 
   /**
@@ -307,7 +594,7 @@ class Process {
   public free(address: bigint): void {
     const { hProcess } = this;
 
-    const dwFreeType = 0x8000; /* MEM_RELEASE */
+    const dwFreeType = MemoryAllocationType.MEM_RELEASE;
     const dwSize = 0x00n;
     const lpAddress = address;
 
@@ -342,7 +629,7 @@ class Process {
     const dwSize = BigInt(length);
     const flNewProtect = protect;
     const lpAddress = address;
-    const lpflOldProtect = this.#Scratch4Uint32Array.ptr;
+    const lpflOldProtect = this.#Scratch4.u32.ptr;
 
     const bVirtualProtectEx = VirtualProtectEx(hProcess, lpAddress, dwSize, flNewProtect, lpflOldProtect);
 
@@ -350,7 +637,7 @@ class Process {
       throw new Win32Error('VirtualProtectEx', GetLastError());
     }
 
-    return this.#Scratch4Uint32Array[0x00]!;
+    return this.#Scratch4.u32[0x00]!;
   }
 
   /**
@@ -365,7 +652,7 @@ class Process {
    * const myBuffer = cs2.read(0x12345678n, new Uint8Array(4));
    * ```
    */
-  public read<T extends Scratch>(address: bigint, scratch: T): T {
+  public read<T extends BufferLike>(address: bigint, scratch: T): T {
     const { hProcess } = this;
 
     const lpBaseAddress = address;
@@ -393,7 +680,7 @@ class Process {
   public refresh(): void {
     const { th32ProcessID } = this;
 
-    const dwFlags = 0x00000018; /* TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32 */
+    const dwFlags = ToolhelpSnapshotFlags.TH32CS_SNAPMODULE | ToolhelpSnapshotFlags.TH32CS_SNAPMODULE32;
 
     const hSnapshot = CreateToolhelp32Snapshot(dwFlags, th32ProcessID)!;
 
@@ -402,9 +689,10 @@ class Process {
     }
 
     const lpme = this.#Scratch1080;
-    /* */ lpme.writeUInt32LE(0x438 /* sizeof(MODULEENTRY32W) */);
+    const lpmeBuffer = lpme.buffer;
+    /* */ lpmeBuffer.writeUInt32LE(0x438 /* sizeof(MODULEENTRY32W) */);
 
-    const bModule32FirstW = Module32FirstW(hSnapshot, ptr(lpme));
+    const bModule32FirstW = Module32FirstW(hSnapshot, lpme.ptr);
 
     if (!bModule32FirstW) {
       CloseHandle(hSnapshot);
@@ -415,14 +703,14 @@ class Process {
     const modules: Record<string, Module> = {};
 
     do {
-      const hModule = lpme.readBigUInt64LE(0x28);
-      const modBaseAddr = lpme.readBigUInt64LE(0x18);
-      const modBaseSize = lpme.readUInt32LE(0x20);
-      const szExePath = lpme.toString('utf16le', 0x230, 0x438).replace(Process.#Patterns.ReplaceTrailingNull, '');
-      const szModule = lpme.toString('utf16le', 0x30, 0x230).replace(Process.#Patterns.ReplaceTrailingNull, '');
+      const buffer = Buffer.allocUnsafe(0x438);
+      lpmeBuffer.copy(buffer);
 
-      modules[szModule] = new Module(this, hModule, modBaseAddr, modBaseSize, szExePath, szModule);
-    } while (Module32NextW(hSnapshot, ptr(lpme)));
+      const module = new Module(buffer);
+      const szModule = module.szModule;
+
+      modules[szModule] = module;
+    } while (Module32NextW(hSnapshot, lpme.ptr));
 
     CloseHandle(hSnapshot);
 
@@ -445,11 +733,11 @@ class Process {
    * cs2.write(0x12345678n, new Uint8Array([1,2,3,4]), true);
    * ```
    */
-  public write(address: bigint, scratch: Scratch, force: boolean = false): this {
+  public write(address: bigint, scratch: BufferLike, force: boolean = false): this {
     const { hProcess } = this;
 
     const lpBaseAddress = address;
-    const lpBuffer = scratch.ptr;
+    const lpBuffer = ptr(scratch);
     const nSize = BigInt(scratch.byteLength);
     const numberOfBytesWritten = 0x00n;
 
@@ -464,7 +752,7 @@ class Process {
     }
 
     const dwSize = nSize;
-    const flNewProtect = 0x40; /* PAGE_EXECUTE_READWRITE */
+    const flNewProtect = MemoryProtection.PAGE_EXECUTE_READWRITE;
     const lpflOldProtect = Buffer.allocUnsafe(0x04);
 
     const bVirtualProtectEx = VirtualProtectEx(hProcess, lpBaseAddress, dwSize, flNewProtect, lpflOldProtect.ptr);
@@ -512,18 +800,18 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch1Ptr, 0x01n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch1.ptr, 0x01n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return this.#Scratch1[0x00]! !== 0;
+      return this.#Scratch1.u8[0x00]! !== 0;
     }
 
-    this.#Scratch1[0x00] = value ? 0x01 : 0x00;
+    this.#Scratch1.u8[0x00] = value ? 0x01 : 0x00;
 
-    this.write(address, this.#Scratch1, force);
+    this.write(address, this.#Scratch1.u8, force);
 
     return this;
   }
@@ -543,14 +831,14 @@ class Process {
   public bits(address: bigint, startBit: number, bitCount: number): number {
     const { hProcess } = this;
 
-    const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4Ptr, 0x04n, 0x00n);
+    const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4.ptr, 0x04n, 0x00n);
 
     if (!bReadProcessMemory) {
       throw new Win32Error('ReadProcessMemory', GetLastError());
     }
 
     const mask  = (1 << bitCount) - 1,
-          value = this.#Scratch4Uint32Array[0x00]!; // prettier-ignore
+          value = this.#Scratch4.u32[0x00]!; // prettier-ignore
 
     return (value >> startBit) & mask;
   }
@@ -641,18 +929,18 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4Ptr, 0x04n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4.ptr, 0x04n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return this.#Scratch4Float32Array[0x00]!;
+      return this.#Scratch4.f32[0x00]!;
     }
 
-    this.#Scratch4Float32Array[0x00] = value;
+    this.#Scratch4.f32[0x00] = value;
 
-    this.write(address, this.#Scratch4Float32Array, force);
+    this.write(address, this.#Scratch4.f32, force);
 
     return this;
   }
@@ -708,18 +996,18 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8Ptr, 0x08n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8.ptr, 0x08n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return this.#Scratch8Float64Array[0x00]!;
+      return this.#Scratch8.f64[0x00]!;
     }
 
-    this.#Scratch8Float64Array[0x00] = value;
+    this.#Scratch8.f64[0x00] = value;
 
-    this.write(address, this.#Scratch8Float64Array, force);
+    this.write(address, this.#Scratch8.f64, force);
 
     return this;
   }
@@ -775,18 +1063,18 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch2Ptr, 0x02n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch2.ptr, 0x02n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return this.#Scratch2Int16Array[0x00]!;
+      return this.#Scratch2.i16[0x00]!;
     }
 
-    this.#Scratch2Int16Array[0x00] = value;
+    this.#Scratch2.i16[0x00] = value;
 
-    this.write(address, this.#Scratch2Int16Array, force);
+    this.write(address, this.#Scratch2.i16, force);
 
     return this;
   }
@@ -842,18 +1130,18 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4Ptr, 0x04n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4.ptr, 0x04n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return this.#Scratch4Int32Array[0x00]!;
+      return this.#Scratch4.i32[0x00]!;
     }
 
-    this.#Scratch4Int32Array[0x00] = value;
+    this.#Scratch4.i32[0x00] = value;
 
-    this.write(address, this.#Scratch4Int32Array, force);
+    this.write(address, this.#Scratch4.i32, force);
 
     return this;
   }
@@ -909,18 +1197,18 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8Ptr, 0x08n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8.ptr, 0x08n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return this.#Scratch8BigInt64Array[0x00]!;
+      return this.#Scratch8.i64[0x00]!;
     }
 
-    this.#Scratch8BigInt64Array[0x00] = value;
+    this.#Scratch8.i64[0x00] = value;
 
-    this.write(address, this.#Scratch8BigInt64Array, force);
+    this.write(address, this.#Scratch8.i64, force);
 
     return this;
   }
@@ -976,18 +1264,18 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch1Ptr, 0x01n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch1.ptr, 0x01n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return this.#Scratch1Int8Array[0x00]!;
+      return this.#Scratch1.i8[0x00]!;
     }
 
-    this.#Scratch1Int8Array[0x00] = value;
+    this.#Scratch1.i8[0x00] = value;
 
-    this.write(address, this.#Scratch1Int8Array, force);
+    this.write(address, this.#Scratch1.i8, force);
 
     return this;
   }
@@ -1142,22 +1430,22 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8Ptr, 0x08n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8.ptr, 0x08n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      const x = this.#Scratch8Float32Array[0x00]!,
-            y = this.#Scratch8Float32Array[0x01]!; // prettier-ignore
+      const x = this.#Scratch8.f32[0x00]!,
+            y = this.#Scratch8.f32[0x01]!; // prettier-ignore
 
       return { x, y };
     }
 
-    this.#Scratch8Float32Array[0x00] = value.x;
-    this.#Scratch8Float32Array[0x01] = value.y;
+    this.#Scratch8.f32[0x00] = value.x;
+    this.#Scratch8.f32[0x01] = value.y;
 
-    this.write(address, this.#Scratch8Float32Array, force);
+    this.write(address, this.#Scratch8.f32, force);
 
     return this;
   }
@@ -1256,20 +1544,20 @@ class Process {
   public qAngle(address: bigint, value: QAngle, force?: boolean): this;
   public qAngle(address: bigint, value?: QAngle, force?: boolean): QAngle | this {
     if (value === undefined) {
-      this.read(address, this.#Scratch12Float32Array);
+      this.read(address, this.#Scratch12.f32);
 
-      const pitch = this.#Scratch12Float32Array[0x00]!,
-            roll  = this.#Scratch12Float32Array[0x02]!,
-            yaw   = this.#Scratch12Float32Array[0x01]!; // prettier-ignore
+      const pitch = this.#Scratch12.f32[0x00]!,
+            roll  = this.#Scratch12.f32[0x02]!,
+            yaw   = this.#Scratch12.f32[0x01]!; // prettier-ignore
 
       return { pitch, roll, yaw };
     }
 
-    this.#Scratch12Float32Array[0x00] = value.pitch;
-    this.#Scratch12Float32Array[0x02] = value.roll;
-    this.#Scratch12Float32Array[0x01] = value.yaw;
+    this.#Scratch12.f32[0x00] = value.pitch;
+    this.#Scratch12.f32[0x02] = value.roll;
+    this.#Scratch12.f32[0x01] = value.yaw;
 
-    this.write(address, this.#Scratch12Float32Array, force);
+    this.write(address, this.#Scratch12.f32, force);
 
     return this;
   }
@@ -1372,26 +1660,26 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch16Ptr, 0x10n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch16.ptr, 0x10n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      const w = this.#Scratch16Float32Array[0x03]!,
-            x = this.#Scratch16Float32Array[0x00]!,
-            y = this.#Scratch16Float32Array[0x01]!,
-            z = this.#Scratch16Float32Array[0x02]!; // prettier-ignore
+      const w = this.#Scratch16.f32[0x03]!,
+            x = this.#Scratch16.f32[0x00]!,
+            y = this.#Scratch16.f32[0x01]!,
+            z = this.#Scratch16.f32[0x02]!; // prettier-ignore
 
       return { w, x, y, z };
     }
 
-    this.#Scratch16Float32Array[0x03] = value.w;
-    this.#Scratch16Float32Array[0x00] = value.x;
-    this.#Scratch16Float32Array[0x01] = value.y;
-    this.#Scratch16Float32Array[0x02] = value.z;
+    this.#Scratch16.f32[0x03] = value.w;
+    this.#Scratch16.f32[0x00] = value.x;
+    this.#Scratch16.f32[0x01] = value.y;
+    this.#Scratch16.f32[0x02] = value.z;
 
-    this.write(address, this.#Scratch16Float32Array, force);
+    this.write(address, this.#Scratch16.f32, force);
 
     return this;
   }
@@ -1495,20 +1783,20 @@ class Process {
   public rgb(address: bigint, value: RGB, force?: boolean): this;
   public rgb(address: bigint, value?: RGB, force?: boolean): RGB | this {
     if (value === undefined) {
-      this.read(address, this.#Scratch3);
+      this.read(address, this.#Scratch3.u8);
 
-      const r = this.#Scratch3[0x00]!,
-            g = this.#Scratch3[0x01]!,
-            b = this.#Scratch3[0x02]!; // prettier-ignore
+      const r = this.#Scratch3.u8[0x00]!,
+            g = this.#Scratch3.u8[0x01]!,
+            b = this.#Scratch3.u8[0x02]!; // prettier-ignore
 
       return { r, g, b };
     }
 
-    this.#Scratch3[0x00] = value.r;
-    this.#Scratch3[0x01] = value.g;
-    this.#Scratch3[0x02] = value.b;
+    this.#Scratch3.u8[0x00] = value.r;
+    this.#Scratch3.u8[0x01] = value.g;
+    this.#Scratch3.u8[0x02] = value.b;
 
-    this.write(address, this.#Scratch3, force);
+    this.write(address, this.#Scratch3.u8, force);
 
     return this;
   }
@@ -1559,22 +1847,22 @@ class Process {
   public rgba(address: bigint, value: RGBA, force?: boolean): this;
   public rgba(address: bigint, value?: RGBA, force?: boolean): RGBA | this {
     if (value === undefined) {
-      this.read(address, this.#Scratch4);
+      this.read(address, this.#Scratch4.u8);
 
-      const r = this.#Scratch4[0x00]!,
-            g = this.#Scratch4[0x01]!,
-            b = this.#Scratch4[0x02]!,
-            a = this.#Scratch4[0x03]!; // prettier-ignore
+      const r = this.#Scratch4.u8[0x00]!,
+            g = this.#Scratch4.u8[0x01]!,
+            b = this.#Scratch4.u8[0x02]!,
+            a = this.#Scratch4.u8[0x03]!; // prettier-ignore
 
       return { r, g, b, a };
     }
 
-    this.#Scratch4[0x00] = value.r;
-    this.#Scratch4[0x01] = value.g;
-    this.#Scratch4[0x02] = value.b;
-    this.#Scratch4[0x03] = value.a;
+    this.#Scratch4.u8[0x00] = value.r;
+    this.#Scratch4.u8[0x01] = value.g;
+    this.#Scratch4.u8[0x02] = value.b;
+    this.#Scratch4.u8[0x03] = value.a;
 
-    this.write(address, this.#Scratch4, force);
+    this.write(address, this.#Scratch4.u8, force);
 
     return this;
   }
@@ -2217,18 +2505,18 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch2Ptr, 0x02n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch2.ptr, 0x02n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return this.#Scratch2Uint16Array[0x00]!;
+      return this.#Scratch2.u16[0x00]!;
     }
 
-    this.#Scratch2Uint16Array[0x00] = value;
+    this.#Scratch2.u16[0x00] = value;
 
-    this.write(address, this.#Scratch2Uint16Array, force);
+    this.write(address, this.#Scratch2.u16, force);
 
     return this;
   }
@@ -2284,18 +2572,18 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4Ptr, 0x04n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4.ptr, 0x04n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return this.#Scratch4Uint32Array[0x00]!;
+      return this.#Scratch4.u32[0x00]!;
     }
 
-    this.#Scratch4Uint32Array[0x00] = value;
+    this.#Scratch4.u32[0x00] = value;
 
-    this.write(address, this.#Scratch4Uint32Array, force);
+    this.write(address, this.#Scratch4.u32, force);
 
     return this;
   }
@@ -2351,18 +2639,18 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8Ptr, 0x08n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8.ptr, 0x08n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return this.#Scratch8BigUint64Array[0x00]!;
+      return this.#Scratch8.u64[0x00]!;
     }
 
-    this.#Scratch8BigUint64Array[0x00] = value;
+    this.#Scratch8.u64[0x00] = value;
 
-    this.write(address, this.#Scratch8BigUint64Array, force);
+    this.write(address, this.#Scratch8.u64, force);
 
     return this;
   }
@@ -2418,18 +2706,18 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch1Ptr, 0x01n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch1.ptr, 0x01n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return this.#Scratch1[0x00]!;
+      return this.#Scratch1.u8[0x00]!;
     }
 
-    this.#Scratch1[0x00] = value;
+    this.#Scratch1.u8[0x00] = value;
 
-    this.write(address, this.#Scratch1, force);
+    this.write(address, this.#Scratch1.u8, force);
 
     return this;
   }
@@ -2714,21 +3002,21 @@ class Process {
   public vFunction(address: bigint, index: number): bigint {
     const { hProcess } = this;
 
-    const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8Ptr, 0x08n, 0x00n);
+    const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch8.ptr, 0x08n, 0x00n);
 
     if (!bReadProcessMemory) {
       throw new Win32Error('ReadProcessMemory', GetLastError());
     }
 
-    const vtablePtr = this.#Scratch8BigUint64Array[0x00]!;
+    const vtablePtr = this.#Scratch8.u64[0x00]!;
 
-    const bReadProcessMemory2 = !!ReadProcessMemory(hProcess, vtablePtr + BigInt(index * 0x08), this.#Scratch8Ptr, 0x08n, 0x00n);
+    const bReadProcessMemory2 = !!ReadProcessMemory(hProcess, vtablePtr + BigInt(index * 0x08), this.#Scratch8.ptr, 0x08n, 0x00n);
 
     if (!bReadProcessMemory2) {
       throw new Win32Error('ReadProcessMemory', GetLastError());
     }
 
-    return this.#Scratch8BigUint64Array[0x00]!;
+    return this.#Scratch8.u64[0x00]!;
   }
 
   /**
@@ -2856,24 +3144,24 @@ class Process {
     const { hProcess } = this;
 
     if (value === undefined) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch12Ptr, 0x0cn, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch12.ptr, 0x0cn, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      const x = this.#Scratch12Float32Array[0x00]!,
-            y = this.#Scratch12Float32Array[0x01]!,
-            z = this.#Scratch12Float32Array[0x02]!; // prettier-ignore
+      const x = this.#Scratch12.f32[0x00]!,
+            y = this.#Scratch12.f32[0x01]!,
+            z = this.#Scratch12.f32[0x02]!; // prettier-ignore
 
       return { x, y, z };
     }
 
-    this.#Scratch12Float32Array[0x00] = value.x;
-    this.#Scratch12Float32Array[0x01] = value.y;
-    this.#Scratch12Float32Array[0x02] = value.z;
+    this.#Scratch12.f32[0x00] = value.x;
+    this.#Scratch12.f32[0x01] = value.y;
+    this.#Scratch12.f32[0x02] = value.z;
 
-    this.write(address, this.#Scratch12Float32Array, force);
+    this.write(address, this.#Scratch12.f32, force);
 
     return this;
   }
@@ -3150,13 +3438,13 @@ class Process {
     const last = length - 1;
 
     for (let i = 0; i < last; i++) {
-      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address + offsets[i]!, this.#Scratch8Ptr, 0x08n, 0x00n);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address + offsets[i]!, this.#Scratch8.ptr, 0x08n, 0x00n);
 
       if (!bReadProcessMemory) {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      address = this.#Scratch8BigUint64Array[0x00]!;
+      address = this.#Scratch8.u64[0x00]!;
 
       if (address === 0n) {
         return -1n;
@@ -3186,10 +3474,10 @@ class Process {
    * const allAddressess = cs2.indexOf(needle, 0x10000000n, 100, true);
    * ```
    */
-  public indexOf(needle: Scratch, address: bigint, length: number): bigint;
-  public indexOf(needle: Scratch, address: bigint, length: number, all: false): bigint;
-  public indexOf(needle: Scratch, address: bigint, length: number, all: true): bigint[];
-  public indexOf(needle: Scratch, address: bigint, length: number, all: boolean = false): bigint | bigint[] {
+  public indexOf(needle: BufferLike, address: bigint, length: number): bigint;
+  public indexOf(needle: BufferLike, address: bigint, length: number, all: false): bigint;
+  public indexOf(needle: BufferLike, address: bigint, length: number, all: true): bigint[];
+  public indexOf(needle: BufferLike, address: bigint, length: number, all: boolean = false): bigint | bigint[] {
     const haystack = Buffer.allocUnsafe(length);
 
     const needleBuffer = ArrayBuffer.isView(needle) //
@@ -3253,16 +3541,76 @@ class Process {
 
     const anchor = tokens.shift()!;
 
-    const haystack = this.buffer(address, length);
+    const { hProcess } = this;
 
-    const end = length - (needle.length >>> 1);
-    let   start = haystack.indexOf(anchor.buffer); // prettier-ignore
+    const mbi      = new MemoryBasicInformation(); // prettier-ignore
+    const dwLength = 0x30n; /* sizeof(MEMORY_BASIC_INFORMATION) */
 
-    if (start === -1) {
-      return !all ? -1n : [];
-    }
+    const end     = address + BigInt(length); // prettier-ignore
+    let   lpAddress = address; // prettier-ignore
 
-    if (!all) {
+    const results: bigint[] = [];
+
+    while (lpAddress < end && VirtualQueryEx(hProcess, lpAddress, mbi.ptr, dwLength) === dwLength) {
+      const base  = mbi.BaseAddress; // prettier-ignore
+      const size  = mbi.RegionSize; // prettier-ignore
+      const state = mbi.State; // prettier-ignore
+
+      lpAddress = base + size;
+
+      if (state !== MemoryAllocationType.MEM_COMMIT) {
+        continue;
+      }
+
+      const regionStart  = base     > address   ? base     : address; // prettier-ignore
+      const regionEnd    = lpAddress < end       ? lpAddress : end; // prettier-ignore
+      const regionLength = Number(regionEnd - regionStart); // prettier-ignore
+
+      if (regionLength <= 0) {
+        continue;
+      }
+
+      const haystack = this.buffer(regionStart, regionLength);
+
+      const last  = regionLength - (needle.length >>> 1); // prettier-ignore
+      let   start = haystack.indexOf(anchor.buffer); // prettier-ignore
+
+      if (start === -1) {
+        continue;
+      }
+
+      if (!all) {
+        outer: do {
+          const base = start - anchor.index;
+
+          if (base < 0) {
+            continue;
+          }
+
+          if (base > last) {
+            break;
+          }
+
+          for (const { buffer, index, length } of tokens) {
+            const sourceEnd = base + index + length,
+                  sourceStart = base + index,
+                  target = buffer,
+                  targetEnd = length,
+                  targetStart = 0; // prettier-ignore
+
+            const compare = haystack.compare(target, targetStart, targetEnd, sourceStart, sourceEnd);
+
+            if (compare !== 0) {
+              continue outer;
+            }
+          }
+
+          return regionStart + BigInt(base);
+        } while ((start = haystack.indexOf(anchor.buffer, start + 0x01)) !== -1);
+
+        continue;
+      }
+
       outer: do {
         const base = start - anchor.index;
 
@@ -3270,8 +3618,8 @@ class Process {
           continue;
         }
 
-        if (base > end) {
-          return -1n;
+        if (base > last) {
+          break;
         }
 
         for (const { buffer, index, length } of tokens) {
@@ -3288,43 +3636,49 @@ class Process {
           }
         }
 
-        return address + BigInt(base);
+        results.push(regionStart + BigInt(base));
       } while ((start = haystack.indexOf(anchor.buffer, start + 0x01)) !== -1);
-
-      return -1n;
     }
 
-    const results: bigint[] = [];
+    return !all ? -1n : results;
+  }
 
-    outer: do {
-      const base = start - anchor.index;
+  /**
+   * Enumerates all memory regions in the process.
+   * @returns Array of memory regions.
+   * @example
+   * ```ts
+   * const cs2 = new Process('cs2.exe');
+   * const regions = cs2.query();
+   * ```
+   */
+  public query(): MemoryBasicInformation[] {
+    const { hProcess } = this;
 
-      if (base < 0) {
-        continue;
-      }
+    const lpBufferBuffer = Buffer.allocUnsafe(0x30);
 
-      if (base > end) {
-        return results;
-      }
+    const lpBuffer = ptr(lpBufferBuffer);
+    const dwLength = 0x30n; /* sizeof(MEMORY_BASIC_INFORMATION) */
 
-      for (const { buffer, index, length } of tokens) {
-        const sourceEnd = base + index + length,
-              sourceStart = base + index,
-              target = buffer,
-              targetEnd = length,
-              targetStart = 0; // prettier-ignore
+    const query: ReturnType<Process['query']> = [];
 
-        const compare = haystack.compare(target, targetStart, targetEnd, sourceStart, sourceEnd);
+    let lpAddress = 0n;
 
-        if (compare !== 0) {
-          continue outer;
-        }
-      }
+    const bVirtualQueryEx = VirtualQueryEx(hProcess, lpAddress, lpBuffer, dwLength);
 
-      results.push(address + BigInt(base));
-    } while ((start = haystack.indexOf(anchor.buffer, start + 0x01)) !== -1);
+    if (!bVirtualQueryEx) {
+      throw new Win32Error('VirtualQueryEx', GetLastError());
+    }
 
-    return results;
+    do {
+      const memoryBasicInformation = new MemoryBasicInformation(Buffer.from(lpBufferBuffer));
+
+      query.push(memoryBasicInformation);
+
+      lpAddress = memoryBasicInformation.BaseAddress + memoryBasicInformation.RegionSize;
+    } while (!!VirtualQueryEx(hProcess, lpAddress, lpBuffer, dwLength));
+
+    return query;
   }
 }
 

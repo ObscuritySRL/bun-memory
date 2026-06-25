@@ -1,4 +1,36 @@
-import type { FFIType, Pointer } from 'bun:ffi';
+import type { FFIType, FFITypeOrString, FFITypeToArgsType, FFITypeToReturnsType, Pointer, ToFFIType } from 'bun:ffi';
+
+/**
+ * Any typed array or buffer that can be used as a memory region for reading/writing.
+ * @example
+ * ```ts
+ * const cs2 = new Process('cs2.exe');
+ * const myBuffer = new Uint8Array(4);
+ * cs2.read(0x12345678n, myBuffer);
+ * ```
+ */
+export type BufferLike = BigInt64Array | BigUint64Array | Buffer | Float16Array | Float32Array | Float64Array | DataView | Int16Array | Int32Array | Int8Array | Uint16Array | Uint8Array | Uint8ClampedArray | Uint32Array;
+
+export type CallArgument<Type extends FFITypeOrString> = ToFFIType<Type> extends FFIType.bool
+  ? boolean
+  : ToFFIType<Type> extends FFIType.cstring | FFIType.function | FFIType.ptr | FFIType.pointer
+    ? CallPointer | null
+    : FFITypeToArgsType[ToFFIType<Type>];
+
+export type CallArguments<Signature extends CallSignature> = Signature['args'] extends infer Arguments extends readonly FFITypeOrString[] ? { [Index in keyof Arguments]: CallArgument<Arguments[Index]> } : never;
+
+export type CallPointer = Pointer | bigint;
+
+export type CallReturn<Signature extends CallSignature> = [unknown] extends [Signature['returns']]
+  ? undefined
+  : ToFFIType<NonNullable<Signature['returns']>> extends FFIType.cstring | FFIType.function | FFIType.ptr | FFIType.pointer
+    ? bigint
+    : FFITypeToReturnsType[ToFFIType<NonNullable<Signature['returns']>>];
+
+export type CallSignature = {
+  readonly args: readonly FFITypeOrString[];
+  readonly returns: FFITypeOrString;
+};
 
 /**
  * A single hexadecimal character (0-9, a-f, A-F).
@@ -14,35 +46,6 @@ export type PatternWildcard = '**' | '??';
  * A single byte in a pattern (two hex chars or a wildcard).
  */
 export type PatternByte = `${HexChar}${HexChar}` | PatternWildcard;
-
-export type CallResult<R extends FFIType> = R extends typeof FFIType.bool
-  ? boolean
-  : R extends typeof FFIType.f32 | typeof FFIType.f64 | typeof FFIType.i8 | typeof FFIType.i16 | typeof FFIType.i32 | typeof FFIType.u8 | typeof FFIType.u16 | typeof FFIType.u32
-  ? number
-  : R extends typeof FFIType.i64 | typeof FFIType.u64
-  ? bigint
-  : R extends typeof FFIType.cstring | typeof FFIType.ptr
-  ? bigint | Pointer
-  : void;
-
-export type CallSignature = {
-  args: (
-    | { type: typeof FFIType.bool; value: boolean }
-    | { type: typeof FFIType.cstring; value: ArrayBuffer | ArrayBufferView | bigint | Buffer | null | number | string }
-    | { type: typeof FFIType.f32; value: number }
-    | { type: typeof FFIType.f64; value: number }
-    | { type: typeof FFIType.i8; value: number }
-    | { type: typeof FFIType.i16; value: number }
-    | { type: typeof FFIType.i32; value: number }
-    | { type: typeof FFIType.i64; value: bigint }
-    | { type: typeof FFIType.ptr; value: ArrayBuffer | ArrayBufferView | bigint | Buffer | null | number | Pointer }
-    | { type: typeof FFIType.u8; value: number }
-    | { type: typeof FFIType.u16; value: number }
-    | { type: typeof FFIType.u32; value: number }
-    | { type: typeof FFIType.u64; value: bigint }
-  )[];
-  returns: FFIType;
-};
 
 /**
  * Represents a contiguous vector of unsigned 32-bit integers.
@@ -181,17 +184,6 @@ export type Region = {
   /** Type. */
   type: number;
 };
-
-/**
- * Represents a buffer usable for memory operations.
- * @example
- * ```ts
- * const cs2 = new Process('cs2.exe');
- * const myBuffer = new Uint8Array(4);
- * cs2.read(0x12345678n, myBuffer);
- * ```
- */
-export type Scratch = BigInt64Array | BigUint64Array | Buffer | Float32Array | Float64Array | DataView | Int16Array | Int32Array | Int8Array | Uint16Array | Uint8Array | Uint8ClampedArray | Uint32Array;
 
 /**
  * Represents a 2D vector.

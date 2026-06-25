@@ -9,6 +9,7 @@
   "main": "./index.ts",
   "module": "index.ts",
   "devDependencies": {
+    "@rlsdk/epic-games": "^1.0.2",
     "@types/bun": "latest"
   },
   "peerDependencies": {
@@ -52,6 +53,7 @@
   },
   "type": "module",
   "dependencies": {
-    "bun-kernel32": "^1.0.9"
+    "@bun-win32/kernel32": "^1.0.26",
+    "@rlsdk/epic-games": "^1.0.2"
   }
 }
