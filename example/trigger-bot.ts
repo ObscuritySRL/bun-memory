@@ -1,4 +1,4 @@
-import { FFIType, dlopen, ptr } from 'bun:ffi';
+import { FFIType, dlopen } from 'bun:ffi';
 import { sleep } from 'bun';
 
 import Process from 'bun-memory';
@@ -32,7 +32,13 @@ const Client = {
 const cs2 = new Process('cs2.exe');
 
 // Get the client.dll module…
-const client = cs2.module('client.dll');
+const client = cs2.modules['client.dll'];
+
+if (client === undefined) {
+  throw new Error('client.dll module was not found.');
+}
+
+const clientBase = client.modBaseAddr;
 
 // Create a cache for class name strings… 🫠…
 const Cache_Names = new Map<bigint, string>();
@@ -44,13 +50,13 @@ async function tick() {
     ticks++;
 
     // Read relevant info from memory…
-    const GlobalVarsPtr = client.u64(Client.Other.dwGlobalVars);
+    const GlobalVarsPtr = cs2.u64(clientBase + Client.Other.dwGlobalVars);
     /* */ const CurTime = cs2.f32(GlobalVarsPtr + 0x30n);
 
-    const Local_PlayerControllerPtr = client.u64(Client.Other.dwLocalPlayerController);
+    const Local_PlayerControllerPtr = cs2.u64(clientBase + Client.Other.dwLocalPlayerController);
     /* */ const Local_TickBase = cs2.u32(Local_PlayerControllerPtr + Client.CBasePlayerController.m_nTickBase);
 
-    const Local_PlayerPawnPtr = client.u64(Client.Other.dwLocalPlayerPawn);
+    const Local_PlayerPawnPtr = cs2.u64(clientBase + Client.Other.dwLocalPlayerPawn);
     /* */ const Local_FlashOverlayAlpha = cs2.f32(Local_PlayerPawnPtr + Client.C_CSPlayerPawnBase.m_flFlashOverlayAlpha);
     /* */ const Local_IDEntIndex = cs2.i32(Local_PlayerPawnPtr + Client.C_CSPlayerPawn.m_iIDEntIndex);
     /* */ const Local_IsScoped = cs2.i32(Local_PlayerPawnPtr + Client.C_CSPlayerPawn.m_bIsScoped);
@@ -83,7 +89,7 @@ async function tick() {
     // Weapon types: https://swiftlys2.net/sdk/cs2/types/csweapontype
 
     // Get the entity that we're aiming at from the entity list…
-    const EntityListPtr = client.u64(Client.Other.dwEntityList);
+    const EntityListPtr = cs2.u64(clientBase + Client.Other.dwEntityList);
     /* */ const EntityChunkPtr = cs2.u64(EntityListPtr + (BigInt(Local_IDEntIndex) >> 0x09n) * 0x08n + 0x10n);
     /*       */ const BaseEntityPtr = cs2.u64(EntityChunkPtr + (BigInt(Local_IDEntIndex) & 0x1ffn) * 0x70n);
     /*             */ const EntityClassInfoPtr = cs2.u64(EntityChunkPtr + (BigInt(Local_IDEntIndex) & 0x1ffn) * 0x70n + 0x08n);

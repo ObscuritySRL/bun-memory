@@ -24,21 +24,25 @@ const Client = {
 const cs2 = new Process('cs2.exe');
 
 // Get the client.dll module…
-const client = cs2.module('client.dll');
+const client = cs2.modules['client.dll'];
+
+if (client === undefined) {
+  throw new Error('client.dll module was not found.');
+}
 
 // Warmup…
 console.log('Warming up…');
 
 for (let i = 0; i < Iterations; i++) {
-  const GlobalVarsPtr = client.u64(Client.Other.dwGlobalVars);
-  /* */ const CurTime = cs2.f32(GlobalVarsPtr + 0x30n);
+  const GlobalVarsPtr = cs2.u64(client.modBaseAddr + Client.Other.dwGlobalVars);
+  /* */ void cs2.f32(GlobalVarsPtr + 0x30n);
 
-  const lPlayerControllerPtr = client.u64(Client.Other.dwLocalPlayerController);
-  /* */ const lPlayerName = cs2.string(lPlayerControllerPtr + Client.CBasePlayerController.m_iszPlayerName, 32);
+  const lPlayerControllerPtr = cs2.u64(client.modBaseAddr + Client.Other.dwLocalPlayerController);
+  /* */ void cs2.string(lPlayerControllerPtr + Client.CBasePlayerController.m_iszPlayerName, 32);
 
-  const lPlayerPawnPtr = client.u64(Client.Other.dwLocalPlayerPawn);
-  /* */ const lHealth = cs2.u32(lPlayerPawnPtr + Client.C_BaseEntity.m_iHealth);
-  /* */ const lTeamNum = cs2.u8(lPlayerPawnPtr + Client.C_BaseEntity.m_iTeamNum);
+  const lPlayerPawnPtr = cs2.u64(client.modBaseAddr + Client.Other.dwLocalPlayerPawn);
+  /* */ void cs2.u32(lPlayerPawnPtr + Client.C_BaseEntity.m_iHealth);
+  /* */ void cs2.u8(lPlayerPawnPtr + Client.C_BaseEntity.m_iTeamNum);
 }
 
 // Create caches and scratches to optimize performance…
@@ -55,7 +59,7 @@ for (let i = 0; i < 5; i++) {
 
   const start = performance.now();
 
-  const EntityListPtr = client.u64(Client.Other.dwEntityList);
+  const EntityListPtr = cs2.u64(client.modBaseAddr + Client.Other.dwEntityList);
 
   for (let j = 0; j < Iterations; j++) {
     try {
@@ -136,6 +140,6 @@ for (let i = 0; i < 5; i++) {
     Iterations,
     (total / 1_000).toFixed(2),
     average.toFixed(2),
-    (average * 1_000).toFixed(2)
+    (average * 1_000).toFixed(2),
   );
 }
