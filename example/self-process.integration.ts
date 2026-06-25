@@ -279,6 +279,9 @@ describe('pointer machinery', () => {
     const needle = Buffer.from('needle');
     expect(self.indexOf(needle, at(haystack), haystack.length)).toBe(at(haystack) + 4n);
     expect(self.indexOf(needle, at(haystack), haystack.length, true)).toEqual([at(haystack) + 4n, at(haystack) + 12n]);
+    // grow-on-demand reuse: a shorter follow-up scan must not match stale tail bytes from the
+    // longer prior read (the 'needle' at offset 4 lies beyond the 4-byte window).
+    expect(self.indexOf(needle, at(haystack), 4)).toBe(-1n);
   });
 
   test('pattern matches bytes and wildcards across a region', () => {

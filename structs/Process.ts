@@ -263,6 +263,11 @@ class Process {
   readonly #Scratch1080 = new Scratch(0x438);
 
   /**
+   * Reusable, grow-on-demand haystack buffer for indexOf() reads.
+   */
+  #indexOfHaystack = Buffer.allocUnsafe(0x1000);
+
+  /**
    * Reusable, grow-on-demand haystack buffer for pattern() region scans.
    */
   #patternHaystack = Buffer.allocUnsafe(0x1000);
@@ -3625,7 +3630,11 @@ class Process {
   public indexOf(needle: BufferLike, address: bigint, length: number, all: false): bigint;
   public indexOf(needle: BufferLike, address: bigint, length: number, all: true): bigint[];
   public indexOf(needle: BufferLike, address: bigint, length: number, all: boolean = false): bigint | bigint[] {
-    const haystack = Buffer.allocUnsafe(length);
+    if (length > this.#indexOfHaystack.byteLength) {
+      this.#indexOfHaystack = Buffer.allocUnsafe(length);
+    }
+
+    const haystack = this.#indexOfHaystack.subarray(0, length);
 
     const needleBuffer = ArrayBuffer.isView(needle) //
       ? Buffer.from(needle.buffer, needle.byteOffset, needle.byteLength)
