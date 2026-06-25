@@ -22,6 +22,16 @@ describe('attach', () => {
     expect(Object.keys(self.modules).length).toBeGreaterThan(0);
     expect(self.is32Bit).toBe(false); // the test runner (bun.exe) is x64
   });
+
+  test('reads PROCESSENTRY32W scalar fields at the correct x64 offsets', () => {
+    // Pins the aligned layout (4-byte pad after th32ProcessID for ULONG_PTR th32DefaultHeapID):
+    // cntThreads@0x1c, th32ParentProcessID@0x20, pcPriClassBase@0x24. A one-slot-low read would
+    // surface cntThreads as th32ModuleID (≈0) and pcPriClassBase as the parent PID (≫31).
+    expect(self.cntThreads).toBeGreaterThanOrEqual(1);
+    expect(self.th32ParentProcessID).toBeGreaterThan(0);
+    expect(self.pcPriClassBase).toBeGreaterThan(0);
+    expect(self.pcPriClassBase).toBeLessThanOrEqual(31); // base priority is 1..31, never a PID
+  });
 });
 
 describe('scalars', () => {

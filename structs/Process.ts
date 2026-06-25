@@ -175,11 +175,11 @@ class Process {
 
       this.#modules = {};
 
-      this.cntThreads = lppeBuffer.readUInt32LE(0x18);
+      this.cntThreads = lppeBuffer.readUInt32LE(0x1c);
       this.hProcess = hProcess;
-      this.pcPriClassBase = lppeBuffer.readInt32LE(0x20);
+      this.pcPriClassBase = lppeBuffer.readInt32LE(0x24);
       this.szExeFile = szExeFile;
-      this.th32ParentProcessID = lppeBuffer.readUInt32LE(0x1c);
+      this.th32ParentProcessID = lppeBuffer.readUInt32LE(0x20);
       this.th32ProcessID = th32ProcessID;
 
       const machineBuffer = Buffer.allocUnsafe(0x04);
