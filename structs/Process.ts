@@ -2079,10 +2079,11 @@ class Process {
   public tArrayChar(address: bigint): string;
   public tArrayChar(address: bigint, value: string, force?: boolean): this;
   public tArrayChar(address: bigint, value?: string, force?: boolean): string | this {
-    const dataPtr = this.u64(address);
+    this.read(address, this.#Scratch16.u8);
+    const dataPtr = this.#Scratch16.u64[0x00]!;
 
     if (value === undefined) {
-      const count = this.u32(address + 0x08n);
+      const count = this.#Scratch16.u32[0x02]!;
 
       if (count === 0x00) {
         return '';
@@ -2120,10 +2121,11 @@ class Process {
   public tArrayF32(address: bigint): Float32Array;
   public tArrayF32(address: bigint, values: Float32Array, force?: boolean): this;
   public tArrayF32(address: bigint, values?: Float32Array, force?: boolean): Float32Array | this {
-    const dataPtr = this.u64(address);
+    this.read(address, this.#Scratch16.u8);
+    const dataPtr = this.#Scratch16.u64[0x00]!;
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n),
+      const count = this.#Scratch16.u32[0x02]!,
         scratch = new Float32Array(count);
 
       if (count === 0) {
@@ -2158,10 +2160,11 @@ class Process {
   public tArrayF64(address: bigint): Float64Array;
   public tArrayF64(address: bigint, values: Float64Array, force?: boolean): this;
   public tArrayF64(address: bigint, values?: Float64Array, force?: boolean): Float64Array | this {
-    const dataPtr = this.u64(address);
+    this.read(address, this.#Scratch16.u8);
+    const dataPtr = this.#Scratch16.u64[0x00]!;
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n),
+      const count = this.#Scratch16.u32[0x02]!,
         scratch = new Float64Array(count);
 
       if (count === 0) {
@@ -2196,10 +2199,11 @@ class Process {
   public tArrayI16(address: bigint): Int16Array;
   public tArrayI16(address: bigint, values: Int16Array, force?: boolean): this;
   public tArrayI16(address: bigint, values?: Int16Array, force?: boolean): Int16Array | this {
-    const dataPtr = this.u64(address);
+    this.read(address, this.#Scratch16.u8);
+    const dataPtr = this.#Scratch16.u64[0x00]!;
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n),
+      const count = this.#Scratch16.u32[0x02]!,
         scratch = new Int16Array(count);
 
       if (count === 0) {
@@ -2234,10 +2238,11 @@ class Process {
   public tArrayI32(address: bigint): Int32Array;
   public tArrayI32(address: bigint, values: Int32Array, force?: boolean): this;
   public tArrayI32(address: bigint, values?: Int32Array, force?: boolean): Int32Array | this {
-    const dataPtr = this.u64(address);
+    this.read(address, this.#Scratch16.u8);
+    const dataPtr = this.#Scratch16.u64[0x00]!;
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n),
+      const count = this.#Scratch16.u32[0x02]!,
         scratch = new Int32Array(count);
 
       if (count === 0) {
@@ -2272,10 +2277,11 @@ class Process {
   public tArrayI64(address: bigint): BigInt64Array;
   public tArrayI64(address: bigint, values: BigInt64Array, force?: boolean): this;
   public tArrayI64(address: bigint, values?: BigInt64Array, force?: boolean): BigInt64Array | this {
-    const dataPtr = this.u64(address);
+    this.read(address, this.#Scratch16.u8);
+    const dataPtr = this.#Scratch16.u64[0x00]!;
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n),
+      const count = this.#Scratch16.u32[0x02]!,
         scratch = new BigInt64Array(count);
 
       if (count === 0) {
@@ -2310,10 +2316,11 @@ class Process {
   public tArrayI8(address: bigint): Int8Array;
   public tArrayI8(address: bigint, values: Int8Array, force?: boolean): this;
   public tArrayI8(address: bigint, values?: Int8Array, force?: boolean): Int8Array | this {
-    const dataPtr = this.u64(address);
+    this.read(address, this.#Scratch16.u8);
+    const dataPtr = this.#Scratch16.u64[0x00]!;
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n),
+      const count = this.#Scratch16.u32[0x02]!,
         scratch = new Int8Array(count);
 
       if (count === 0) {
@@ -2350,10 +2357,11 @@ class Process {
   public tArrayRaw(address: bigint, dataSize: number): Buffer[];
   public tArrayRaw(address: bigint, values: Buffer[], force?: boolean): this;
   public tArrayRaw(address: bigint, dataSizeOrValues: number | Buffer[], force?: boolean): Buffer[] | this {
-    const dataPtr = this.u64(address);
+    this.read(address, this.#Scratch16.u8);
+    const dataPtr = this.#Scratch16.u64[0x00]!;
 
     if (typeof dataSizeOrValues === 'number') {
-      const count = this.u32(address + 0x08n),
+      const count = this.#Scratch16.u32[0x02]!,
         dataSize = dataSizeOrValues;
 
       if (count === 0) {
@@ -2410,10 +2418,11 @@ class Process {
   public tArrayU16(address: bigint): Uint16Array;
   public tArrayU16(address: bigint, values: Uint16Array, force?: boolean): this;
   public tArrayU16(address: bigint, values?: Uint16Array, force?: boolean): Uint16Array | this {
-    const dataPtr = this.u64(address);
+    this.read(address, this.#Scratch16.u8);
+    const dataPtr = this.#Scratch16.u64[0x00]!;
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n),
+      const count = this.#Scratch16.u32[0x02]!,
         scratch = new Uint16Array(count);
 
       if (count === 0) {
@@ -2448,10 +2457,11 @@ class Process {
   public tArrayU32(address: bigint): Uint32Array;
   public tArrayU32(address: bigint, values: Uint32Array, force?: boolean): this;
   public tArrayU32(address: bigint, values?: Uint32Array, force?: boolean): Uint32Array | this {
-    const dataPtr = this.u64(address);
+    this.read(address, this.#Scratch16.u8);
+    const dataPtr = this.#Scratch16.u64[0x00]!;
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n),
+      const count = this.#Scratch16.u32[0x02]!,
         scratch = new Uint32Array(count);
 
       if (count === 0) {
@@ -2486,10 +2496,11 @@ class Process {
   public tArrayU64(address: bigint): BigUint64Array;
   public tArrayU64(address: bigint, values: BigUint64Array, force?: boolean): this;
   public tArrayU64(address: bigint, values?: BigUint64Array, force?: boolean): BigUint64Array | this {
-    const dataPtr = this.u64(address);
+    this.read(address, this.#Scratch16.u8);
+    const dataPtr = this.#Scratch16.u64[0x00]!;
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n),
+      const count = this.#Scratch16.u32[0x02]!,
         scratch = new BigUint64Array(count);
 
       if (count === 0) {
@@ -2524,10 +2535,11 @@ class Process {
   public tArrayU8(address: bigint): Uint8Array;
   public tArrayU8(address: bigint, values: Uint8Array, force?: boolean): this;
   public tArrayU8(address: bigint, values?: Uint8Array, force?: boolean): Uint8Array | this {
-    const dataPtr = this.u64(address);
+    this.read(address, this.#Scratch16.u8);
+    const dataPtr = this.#Scratch16.u64[0x00]!;
 
     if (values === undefined) {
-      const count = this.u32(address + 0x08n),
+      const count = this.#Scratch16.u32[0x02]!,
         scratch = new Uint8Array(count);
 
       if (count === 0) {
@@ -2586,10 +2598,11 @@ class Process {
   public tArrayWChar(address: bigint): string;
   public tArrayWChar(address: bigint, value: string, force?: boolean): this;
   public tArrayWChar(address: bigint, value?: string, force?: boolean): string | this {
-    const dataPtr = this.u64(address);
+    this.read(address, this.#Scratch16.u8);
+    const dataPtr = this.#Scratch16.u64[0x00]!;
 
     if (value === undefined) {
-      const count = this.u32(address + 0x08n);
+      const count = this.#Scratch16.u32[0x02]!;
 
       if (count === 0) {
         return '';
