@@ -295,7 +295,7 @@ class Process {
    * Called automatically when using `using` blocks.
    * @example
    * ```ts
-   * using const mem = new Process('cs2.exe');
+   * using mem = new Process('cs2.exe');
    * // mem is disposed at the end of the block
    * ```
    */
@@ -310,7 +310,7 @@ class Process {
    * Use in `await using` blocks for async cleanup.
    * @example
    * ```ts
-   * await using const mem = new Process('cs2.exe');
+   * await using mem = new Process('cs2.exe');
    * // mem is disposed asynchronously at the end of the block
    * ```
    */
@@ -864,7 +864,7 @@ class Process {
    * Reads specific bits from a 32-bit value.
    * @param address Address to read from.
    * @param startBit Starting bit position (0-31).
-   * @param bitCount Number of bits to read (1-32).
+   * @param bitCount Number of bits to read (1-31).
    * @returns The extracted bits as a number.
    * @example
    * ```ts
@@ -2998,10 +2998,16 @@ class Process {
   /**
    * Reads or writes a generic UtlVector as raw bytes (no typing).
    * Pass elementSize (bytes per element) so we can set/read the header count.
+   * @param address Address to access.
+   * @param elementSize Bytes per element.
+   * @param values Optional Uint8Array to write.
+   * @param force When writing, if true temporarily changes page protection to allow the write.
+   * @returns The bytes at address, or this instance if writing.
    * @example
    * ```ts
+   * const cs2 = new Process('cs2.exe');
    * const bytes = cs2.utlVectorRaw(0x1234n, 0x14); // read size*elementSize bytes
-   * cs2.utlVectorRaw(0x1234n, 0x14, new Uint8Array([...])); // write
+   * cs2.utlVectorRaw(0x1234n, 0x14, new Uint8Array([1, 2, 3, 4])); // write
    * ```
    */
   public utlVectorRaw(address: bigint, elementSize: number): Uint8Array;
