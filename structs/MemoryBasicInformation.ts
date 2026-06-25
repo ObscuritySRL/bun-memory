@@ -76,7 +76,7 @@ class MemoryBasicInformation {
   }
 
   static *query(hProcess: bigint, lpAddress: bigint = 0n): Generator<MemoryBasicInformation> {
-    const mbi      = new MemoryBasicInformation(); // prettier-ignore
+    const mbi = new MemoryBasicInformation();
     const dwLength = 0x30n; /* sizeof(MEMORY_BASIC_INFORMATION) */
 
     const bVirtualQueryEx = VirtualQueryEx(hProcess, lpAddress, mbi.ptr, dwLength);

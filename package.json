@@ -9,6 +9,7 @@
   "main": "./index.ts",
   "module": "index.ts",
   "devDependencies": {
+    "@biomejs/biome": "^2.5.1",
     "@rlsdk/epic-games": "^1.0.2",
     "@types/bun": "latest"
   },
@@ -48,12 +49,12 @@
   "license": "MIT",
   "private": false,
   "scripts": {
+    "format": "biome format --write .",
     "run:benchmark": "bun ./example/benchmark.ts",
     "run:trigger-bot": "bun ./example/trigger-bot.ts"
   },
   "type": "module",
   "dependencies": {
-    "@bun-win32/kernel32": "^1.0.26",
-    "@rlsdk/epic-games": "^1.0.2"
+    "@bun-win32/kernel32": "^1.0.26"
   }
 }

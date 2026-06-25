@@ -11,11 +11,8 @@ import type { FFIType, FFITypeOrString, FFITypeToArgsType, FFITypeToReturnsType,
  */
 export type BufferLike = BigInt64Array | BigUint64Array | Buffer | Float16Array | Float32Array | Float64Array | DataView | Int16Array | Int32Array | Int8Array | Uint16Array | Uint8Array | Uint8ClampedArray | Uint32Array;
 
-export type CallArgument<Type extends FFITypeOrString> = ToFFIType<Type> extends FFIType.bool
-  ? boolean
-  : ToFFIType<Type> extends FFIType.cstring | FFIType.function | FFIType.ptr | FFIType.pointer
-    ? CallPointer | null
-    : FFITypeToArgsType[ToFFIType<Type>];
+export type CallArgument<Type extends FFITypeOrString> =
+  ToFFIType<Type> extends FFIType.bool ? boolean : ToFFIType<Type> extends FFIType.cstring | FFIType.function | FFIType.ptr | FFIType.pointer ? CallPointer | null : FFITypeToArgsType[ToFFIType<Type>];
 
 export type CallArguments<Signature extends CallSignature> = Signature['args'] extends infer Arguments extends readonly FFITypeOrString[] ? { [Index in keyof Arguments]: CallArgument<Arguments[Index]> } : never;
 

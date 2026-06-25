@@ -204,7 +204,7 @@ constructors.forEach(
       get(this): Pointer {
         return ptr(this);
       },
-    })
+    }),
 );
 
 export {};

@@ -837,8 +837,8 @@ class Process {
       throw new Win32Error('ReadProcessMemory', GetLastError());
     }
 
-    const mask  = (1 << bitCount) - 1,
-          value = this.#Scratch4.u32[0x00]!; // prettier-ignore
+    const mask = (1 << bitCount) - 1,
+      value = this.#Scratch4.u32[0x00]!;
 
     return (value >> startBit) & mask;
   }
@@ -1437,7 +1437,7 @@ class Process {
       }
 
       const x = this.#Scratch8.f32[0x00]!,
-            y = this.#Scratch8.f32[0x01]!; // prettier-ignore
+        y = this.#Scratch8.f32[0x01]!;
 
       return { x, y };
     }
@@ -1476,7 +1476,7 @@ class Process {
 
       for (let i = 0, j = 0; i < length; i++, j += 0x02) {
         const x = scratch[j]!,
-              y = scratch[j + 0x01]!; // prettier-ignore
+          y = scratch[j + 0x01]!;
 
         result[i] = { x, y };
       }
@@ -1547,8 +1547,8 @@ class Process {
       this.read(address, this.#Scratch12.f32);
 
       const pitch = this.#Scratch12.f32[0x00]!,
-            roll  = this.#Scratch12.f32[0x02]!,
-            yaw   = this.#Scratch12.f32[0x01]!; // prettier-ignore
+        roll = this.#Scratch12.f32[0x02]!,
+        yaw = this.#Scratch12.f32[0x01]!;
 
       return { pitch, roll, yaw };
     }
@@ -1587,8 +1587,8 @@ class Process {
 
       for (let i = 0, j = 0; i < length; i++, j += 0x03) {
         const pitch = scratch[j]!,
-              yaw   = scratch[j + 0x01]!,
-              roll  = scratch[j + 0x02]!; // prettier-ignore
+          yaw = scratch[j + 0x01]!,
+          roll = scratch[j + 0x02]!;
 
         result[i] = { pitch, yaw, roll };
       }
@@ -1667,9 +1667,9 @@ class Process {
       }
 
       const w = this.#Scratch16.f32[0x03]!,
-            x = this.#Scratch16.f32[0x00]!,
-            y = this.#Scratch16.f32[0x01]!,
-            z = this.#Scratch16.f32[0x02]!; // prettier-ignore
+        x = this.#Scratch16.f32[0x00]!,
+        y = this.#Scratch16.f32[0x01]!,
+        z = this.#Scratch16.f32[0x02]!;
 
       return { w, x, y, z };
     }
@@ -1786,8 +1786,8 @@ class Process {
       this.read(address, this.#Scratch3.u8);
 
       const r = this.#Scratch3.u8[0x00]!,
-            g = this.#Scratch3.u8[0x01]!,
-            b = this.#Scratch3.u8[0x02]!; // prettier-ignore
+        g = this.#Scratch3.u8[0x01]!,
+        b = this.#Scratch3.u8[0x02]!;
 
       return { r, g, b };
     }
@@ -1850,9 +1850,9 @@ class Process {
       this.read(address, this.#Scratch4.u8);
 
       const r = this.#Scratch4.u8[0x00]!,
-            g = this.#Scratch4.u8[0x01]!,
-            b = this.#Scratch4.u8[0x02]!,
-            a = this.#Scratch4.u8[0x03]!; // prettier-ignore
+        g = this.#Scratch4.u8[0x01]!,
+        b = this.#Scratch4.u8[0x02]!,
+        a = this.#Scratch4.u8[0x03]!;
 
       return { r, g, b, a };
     }
@@ -1996,7 +1996,7 @@ class Process {
 
     if (values === undefined) {
       const count = this.u32(address + 0x08n),
-            scratch = new Float32Array(count); // prettier-ignore
+        scratch = new Float32Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2034,7 +2034,7 @@ class Process {
 
     if (values === undefined) {
       const count = this.u32(address + 0x08n),
-            scratch = new Float64Array(count); // prettier-ignore
+        scratch = new Float64Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2072,7 +2072,7 @@ class Process {
 
     if (values === undefined) {
       const count = this.u32(address + 0x08n),
-            scratch = new Int16Array(count); // prettier-ignore
+        scratch = new Int16Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2110,7 +2110,7 @@ class Process {
 
     if (values === undefined) {
       const count = this.u32(address + 0x08n),
-            scratch = new Int32Array(count); // prettier-ignore
+        scratch = new Int32Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2148,7 +2148,7 @@ class Process {
 
     if (values === undefined) {
       const count = this.u32(address + 0x08n),
-            scratch = new BigInt64Array(count); // prettier-ignore
+        scratch = new BigInt64Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2186,7 +2186,7 @@ class Process {
 
     if (values === undefined) {
       const count = this.u32(address + 0x08n),
-            scratch = new Int8Array(count); // prettier-ignore
+        scratch = new Int8Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2226,7 +2226,7 @@ class Process {
 
     if (typeof dataSizeOrValues === 'number') {
       const count = this.u32(address + 0x08n),
-            dataSize = dataSizeOrValues; // prettier-ignore
+        dataSize = dataSizeOrValues;
 
       if (count === 0) {
         return [];
@@ -2286,7 +2286,7 @@ class Process {
 
     if (values === undefined) {
       const count = this.u32(address + 0x08n),
-            scratch = new Uint16Array(count); // prettier-ignore
+        scratch = new Uint16Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2324,7 +2324,7 @@ class Process {
 
     if (values === undefined) {
       const count = this.u32(address + 0x08n),
-            scratch = new Uint32Array(count); // prettier-ignore
+        scratch = new Uint32Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2362,7 +2362,7 @@ class Process {
 
     if (values === undefined) {
       const count = this.u32(address + 0x08n),
-            scratch = new BigUint64Array(count); // prettier-ignore
+        scratch = new BigUint64Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2400,7 +2400,7 @@ class Process {
 
     if (values === undefined) {
       const count = this.u32(address + 0x08n),
-            scratch = new Uint8Array(count); // prettier-ignore
+        scratch = new Uint8Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2828,7 +2828,7 @@ class Process {
 
     const capacity = headerUint16Array[0x01]! & 0x7fff;
     const elementsPtr = headerBigUint64Array[0x00]!;
-    let   index = headerUint16Array[0x08]!; // prettier-ignore
+    let index = headerUint16Array[0x08]!;
 
     if (capacity === 0 || capacity <= index || elementsPtr === 0n || index === 0xffff) {
       return new BigUint64Array(0);
@@ -2840,7 +2840,7 @@ class Process {
 
     this.read(elementsPtr, scratch);
 
-    let   count = 0; // prettier-ignore
+    let count = 0;
     const result = new BigUint64Array(capacity);
 
     while (count < capacity && capacity > index && index !== 0xffff) {
@@ -3151,8 +3151,8 @@ class Process {
       }
 
       const x = this.#Scratch12.f32[0x00]!,
-            y = this.#Scratch12.f32[0x01]!,
-            z = this.#Scratch12.f32[0x02]!; // prettier-ignore
+        y = this.#Scratch12.f32[0x01]!,
+        z = this.#Scratch12.f32[0x02]!;
 
       return { x, y, z };
     }
@@ -3543,18 +3543,18 @@ class Process {
 
     const { hProcess } = this;
 
-    const mbi      = new MemoryBasicInformation(); // prettier-ignore
+    const mbi = new MemoryBasicInformation();
     const dwLength = 0x30n; /* sizeof(MEMORY_BASIC_INFORMATION) */
 
-    const end     = address + BigInt(length); // prettier-ignore
-    let   lpAddress = address; // prettier-ignore
+    const end = address + BigInt(length);
+    let lpAddress = address;
 
     const results: bigint[] = [];
 
     while (lpAddress < end && VirtualQueryEx(hProcess, lpAddress, mbi.ptr, dwLength) === dwLength) {
-      const base  = mbi.BaseAddress; // prettier-ignore
-      const size  = mbi.RegionSize; // prettier-ignore
-      const state = mbi.State; // prettier-ignore
+      const base = mbi.BaseAddress;
+      const size = mbi.RegionSize;
+      const state = mbi.State;
 
       lpAddress = base + size;
 
@@ -3562,9 +3562,9 @@ class Process {
         continue;
       }
 
-      const regionStart  = base     > address   ? base     : address; // prettier-ignore
-      const regionEnd    = lpAddress < end       ? lpAddress : end; // prettier-ignore
-      const regionLength = Number(regionEnd - regionStart); // prettier-ignore
+      const regionStart = base > address ? base : address;
+      const regionEnd = lpAddress < end ? lpAddress : end;
+      const regionLength = Number(regionEnd - regionStart);
 
       if (regionLength <= 0) {
         continue;
@@ -3572,8 +3572,8 @@ class Process {
 
       const haystack = this.buffer(regionStart, regionLength);
 
-      const last  = regionLength - (needle.length >>> 1); // prettier-ignore
-      let   start = haystack.indexOf(anchor.buffer); // prettier-ignore
+      const last = regionLength - (needle.length >>> 1);
+      let start = haystack.indexOf(anchor.buffer);
 
       if (start === -1) {
         continue;
@@ -3593,10 +3593,10 @@ class Process {
 
           for (const { buffer, index, length } of tokens) {
             const sourceEnd = base + index + length,
-                  sourceStart = base + index,
-                  target = buffer,
-                  targetEnd = length,
-                  targetStart = 0; // prettier-ignore
+              sourceStart = base + index,
+              target = buffer,
+              targetEnd = length,
+              targetStart = 0;
 
             const compare = haystack.compare(target, targetStart, targetEnd, sourceStart, sourceEnd);
 
@@ -3624,10 +3624,10 @@ class Process {
 
         for (const { buffer, index, length } of tokens) {
           const sourceEnd = base + index + length,
-                sourceStart = base + index,
-                target = buffer,
-                targetEnd = length,
-                targetStart = 0; // prettier-ignore
+            sourceStart = base + index,
+            target = buffer,
+            targetEnd = length,
+            targetStart = 0;
 
           const compare = haystack.compare(target, targetStart, targetEnd, sourceStart, sourceEnd);
 
