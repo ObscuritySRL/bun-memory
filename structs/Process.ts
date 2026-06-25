@@ -788,9 +788,8 @@ class Process {
       }
     } finally {
       const flNewProtect2 = lpflOldProtect.readUInt32LE(0x00);
-      const lpflOldProtect2 = Buffer.allocUnsafe(0x04);
 
-      const bVirtualProtectEx2 = VirtualProtectEx(hProcess, lpBaseAddress, dwSize, flNewProtect2, lpflOldProtect2.ptr);
+      const bVirtualProtectEx2 = VirtualProtectEx(hProcess, lpBaseAddress, dwSize, flNewProtect2, lpflOldProtect.ptr);
 
       if (!bVirtualProtectEx2) {
         throw new Win32Error('VirtualProtectEx', GetLastError());
@@ -1629,8 +1628,14 @@ class Process {
   public qAngle(address: bigint): QAngle;
   public qAngle(address: bigint, value: QAngle, force?: boolean): this;
   public qAngle(address: bigint, value?: QAngle, force?: boolean): QAngle | this {
+    const { hProcess } = this;
+
     if (value === undefined) {
-      this.read(address, this.#Scratch12.f32);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch12.ptr, 0x0cn, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
+      }
 
       const pitch = this.#Scratch12.f32[0x00]!,
         roll = this.#Scratch12.f32[0x02]!,
@@ -1868,8 +1873,14 @@ class Process {
   public rgb(address: bigint): RGB;
   public rgb(address: bigint, value: RGB, force?: boolean): this;
   public rgb(address: bigint, value?: RGB, force?: boolean): RGB | this {
+    const { hProcess } = this;
+
     if (value === undefined) {
-      this.read(address, this.#Scratch3.u8);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch3.ptr, 0x03n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
+      }
 
       const r = this.#Scratch3.u8[0x00]!,
         g = this.#Scratch3.u8[0x01]!,
@@ -1932,8 +1943,14 @@ class Process {
   public rgba(address: bigint): RGBA;
   public rgba(address: bigint, value: RGBA, force?: boolean): this;
   public rgba(address: bigint, value?: RGBA, force?: boolean): RGBA | this {
+    const { hProcess } = this;
+
     if (value === undefined) {
-      this.read(address, this.#Scratch4.u8);
+      const bReadProcessMemory = !!ReadProcessMemory(hProcess, address, this.#Scratch4.ptr, 0x04n, 0x00n);
+
+      if (!bReadProcessMemory) {
+        throw new Win32Error('ReadProcessMemory', GetLastError());
+      }
 
       const r = this.#Scratch4.u8[0x00]!,
         g = this.#Scratch4.u8[0x01]!,
