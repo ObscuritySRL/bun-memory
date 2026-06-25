@@ -2994,10 +2994,11 @@ class Process {
   public utlVectorRaw(address: bigint, elementSize: number): Uint8Array;
   public utlVectorRaw(address: bigint, elementSize: number, values: Uint8Array, force?: boolean): this;
   public utlVectorRaw(address: bigint, elementSize: number, values?: Uint8Array, force?: boolean): Uint8Array | this {
-    const elementsPtr = this.u64(address + 0x08n);
+    this.read(address, this.#Scratch16.u8);
+    const elementsPtr = this.#Scratch16.u64[0x01]!;
 
     if (values === undefined) {
-      const count = this.u32(address);
+      const count = this.#Scratch16.u32[0x00]!;
 
       if (count === 0 || elementsPtr === 0n) {
         return new Uint8Array(0);
@@ -3044,10 +3045,11 @@ class Process {
   public utlVectorU32(address: bigint): Uint32Array;
   public utlVectorU32(address: bigint, values: Uint32Array, force?: boolean): this;
   public utlVectorU32(address: bigint, values?: Uint32Array, force?: boolean): Uint32Array | this {
-    const elementsPtr = this.u64(address + 0x08n);
+    this.read(address, this.#Scratch16.u8);
+    const elementsPtr = this.#Scratch16.u64[0x01]!;
 
     if (values === undefined) {
-      const size = this.u32(address);
+      const size = this.#Scratch16.u32[0x00]!;
       const scratch = new Uint32Array(size);
 
       if (size === 0) {
@@ -3086,10 +3088,11 @@ class Process {
   public utlVectorU64(address: bigint): BigUint64Array;
   public utlVectorU64(address: bigint, values: BigUint64Array, force?: boolean): this;
   public utlVectorU64(address: bigint, values?: BigUint64Array, force?: boolean): BigUint64Array | this {
-    const elementsPtr = this.u64(address + 0x08n);
+    this.read(address, this.#Scratch16.u8);
+    const elementsPtr = this.#Scratch16.u64[0x01]!;
 
     if (values === undefined) {
-      const size = this.u32(address);
+      const size = this.#Scratch16.u32[0x00]!;
       const scratch = new BigUint64Array(size);
 
       if (size === 0) {
