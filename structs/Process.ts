@@ -664,7 +664,6 @@ class Process {
    * @param address Address to read from.
    * @param scratch Buffer to fill.
    * @returns The filled buffer.
-   * @todo Consider inlining the call in the if to cut a binding… I hate the idea… 🫠…
    * @example
    * ```ts
    * const cs2 = new Process('cs2.exe');
@@ -2006,7 +2005,6 @@ class Process {
    * @param force When writing, if true temporarily changes page protection to allow the write.
    * @returns The string at address, or this instance if writing.
    * @notice When writing, remember to null-terminate your string (e.g., 'hello\0').
-   * @todo Compare performance when using CString vs TextDecoder when reading…
    * @example
    * ```ts
    * const cs2 = new Process('cs2.exe');
@@ -2027,8 +2025,6 @@ class Process {
       return Process.#TextDecoderUTF8.decode(
         scratch.subarray(0, indexOf !== -1 ? indexOf : lengthOrValue), //
       );
-
-      // return new CString(scratch.ptr).valueOf();
     }
 
     const scratch = Process.#TextEncoderUTF8.encode(lengthOrValue);
@@ -2537,7 +2533,6 @@ class Process {
   public tArrayUPtr(address: bigint): BigUint64Array;
   public tArrayUPtr(address: bigint, values: BigUint64Array, force?: boolean): this;
   public tArrayUPtr(address: bigint, values?: BigUint64Array, force?: boolean): BigUint64Array | this {
-    // TypeScript is funny sometimes, isn't it?… 🫠…
     if (values === undefined) {
       return this.tArrayU64(address);
     }
@@ -2873,7 +2868,6 @@ class Process {
   public uPtr(address: bigint): UPtr;
   public uPtr(address: bigint, value: UPtr, force?: boolean): this;
   public uPtr(address: bigint, value?: UPtr, force?: boolean): UPtr | this {
-    // TypeScript is funny sometimes, isn't it?… 🫠…
     if (value === undefined) {
       return this.u64(address);
     }
@@ -2897,7 +2891,6 @@ class Process {
   public uPtrArray(address: bigint, length: number): UPtrArray;
   public uPtrArray(address: bigint, values: UPtrArray, force?: boolean): this;
   public uPtrArray(address: bigint, lengthOrValues: UPtrArray | number, force?: boolean): UPtrArray | this {
-    // TypeScript is funny sometimes, isn't it?… 🫠…
     if (typeof lengthOrValues === 'number') {
       return this.u64Array(address, lengthOrValues);
     }
@@ -2915,7 +2908,6 @@ class Process {
    *
    * @param address Address of the UtlLinkedList header in the remote process.
    * @returns BigUint64Array containing the list elements (empty if the list is invalid or empty).
-   * @todo Create a writer so that users can write linked lists…
    * @example
    * ```ts
    * const cs2 = new Process('cs2.exe');
@@ -3152,7 +3144,6 @@ class Process {
   public vector2(address: bigint): Vector2;
   public vector2(address: bigint, value: Vector2, force?: boolean): this;
   public vector2(address: bigint, value?: Vector2, force?: boolean): Vector2 | this {
-    // TypeScript is funny sometimes, isn't it?… 🫠…
     if (value === undefined) {
       return this.point(address);
     }
@@ -3176,7 +3167,6 @@ class Process {
   public vector2Array(address: bigint, length: number): Vector2[];
   public vector2Array(address: bigint, values: Vector2[], force?: boolean): this;
   public vector2Array(address: bigint, lengthOrValues: Vector2[] | number, force?: boolean): Vector2[] | this {
-    // TypeScript is funny sometimes, isn't it?… 🫠…
     if (typeof lengthOrValues === 'number') {
       return this.pointArray(address, lengthOrValues);
     }
@@ -3380,7 +3370,6 @@ class Process {
   public vector4(address: bigint): Vector4;
   public vector4(address: bigint, value: Vector4, force?: boolean): this;
   public vector4(address: bigint, value?: Vector4, force?: boolean): Vector4 | this {
-    // TypeScript is funny sometimes, isn't it?… 🫠…
     if (value === undefined) {
       return this.quaternion(address);
     }
@@ -3404,7 +3393,6 @@ class Process {
   public vector4Array(address: bigint, length: number): Vector4[];
   public vector4Array(address: bigint, values: Vector4[], force?: boolean): this;
   public vector4Array(address: bigint, lengthOrValues: Vector4[] | number, force?: boolean): Vector4[] | this {
-    // TypeScript is funny sometimes, isn't it?… 🫠…
     if (typeof lengthOrValues === 'number') {
       return this.quaternionArray(address, lengthOrValues);
     }
@@ -3472,7 +3460,6 @@ class Process {
   public viewMatrix(address: bigint): Float32Array;
   public viewMatrix(address: bigint, values: Float32Array, force?: boolean): this;
   public viewMatrix(address: bigint, values?: Float32Array, force?: boolean): Float32Array | this {
-    // TypeScript is funny sometimes, isn't it?… 🫠…
     if (values === undefined) {
       return this.matrix4x4(address);
     }

@@ -11,7 +11,7 @@ const ReplaceTrailingNull = /\0+$/;
  * @example
  * ```ts
  * const cs2 = new Process('cs2.exe');
- * const client = cs2.module('client.dll');
+ * const client = cs2.modules['client.dll'];
  * console.log(client.modBaseAddr, client.modBaseSize, client.szExePath);
  * ```
  */

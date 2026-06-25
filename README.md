@@ -4,7 +4,7 @@ Blazing fast, high-performance Windows process memory manipulation for [Bun](htt
 
 ## Overview
 
-`bun-memory` provides fast, allocation-conscious tools for reading and writing memory in external Windows processes. Designed for [Bun](https://bun.sh/) and Windows 10/11, it exposes a single class, `Memory`, with a clear, type-safe API for all common memory operations.
+`bun-memory` provides fast, allocation-conscious tools for reading and writing memory in external Windows processes. Designed for [Bun](https://bun.sh/) and Windows 10/11, it exposes a single class, `Process`, with a clear, type-safe API for all common memory operations.
 
 ## Features
 
@@ -31,10 +31,10 @@ bun add bun-memory
 For maximum performance, it is highly recommended to read about [using scratches](#example-using-scratches-recommended).
 
 ```ts
-import Memory from 'bun-memory';
+import Process from 'bun-memory';
 
 // Attach to a process by name
-const cs2 = new Memory('cs2.exe');
+const cs2 = new Process('cs2.exe');
 
 // Read a float
 const myFloat = cs2.f32(0x12345678n);
@@ -56,7 +56,7 @@ cs2.close();
 - `pattern(needle, address, length, [all])` — Find a byte pattern in memory (supports wildcards, returns all matches if all=true)
 - `read(address, scratch)` — Read memory into a scratch (no allocations)
 - `write(address, scratch, [force])` — Write a scratch to memory
-- Module map: `memory.modules['client.dll']`
+- Module map: `cs2.modules['client.dll']`
 - Typed accessors: `bool`, `f32`, `i32`, `matrix4x4`, `u8`, `u64Array`, `vector3`, etc.
 
 See the code and type definitions for full details. All methods are documented with concise examples.
@@ -151,7 +151,7 @@ while (true) {
 
 ```ts
 const buffer = Buffer.allocUnsafe(256);
-const array = new Uint64Array(buffer.buffer, buffer.byteOffset, buffer.byteLength / 8);
+const array = new BigUint64Array(buffer.buffer, buffer.byteOffset, buffer.byteLength / 8);
 
 while (true) {
   cs2.read(0x10000000n, buffer); // Updates both array & buffer without allocations
