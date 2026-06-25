@@ -25,4 +25,4 @@ RESOLUTION: COMPLETE iff in ONE turn EVERY lane CLEAN-w-evidence AND tsc --noEmi
 
 LAW (AGENTS.md): surgical diffs; NO casts ever (fix types); #private; full-word names; alphabetize; tsc0 ∀ change. ABSOLUTE: NO new surface/capability — hardening ONLY. SHIP=commit&push ∀ slice (Conventional Commits 1/win); owner releases (no publish).
 
-ANCHOR (re-verify HEAD): Process(~90 methods)+Module+Scratch+Win32Error+MBI+PE32W; dep @bun-win32/kernel32; tsc0; no test suite yet. FIRST ACTION: spawn ALL finders NOW.
+ANCHOR (re-verify HEAD): Process(~90 methods)+Module+Scratch+Win32Error+MBI; dep @bun-win32/kernel32; tsc0+biome; 3 integration suites green (self/RL/wow64). FIRST ACTION: spawn ALL finders NOW.

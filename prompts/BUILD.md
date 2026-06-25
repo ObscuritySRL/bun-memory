@@ -22,4 +22,4 @@ VERIFY LIVE: prove R/W via self-process integration (alloc→read-back→assert)
 
 LAW (AGENTS.md): surgical diffs; NO casts (fix types); #private; full-word names; alphabetize; tsc0+biome ∀ change; bun:ffi only; NO unrequested abstraction; Conventional Commits 1/slice; owner releases (no publish).
 
-ANCHOR (re-verify HEAD; backlog=TODO.md): FFI all via @bun-win32/kernel32; biome not prettier; tsc0; harness+benchmarks underway; RocketLeague.exe live. FIRST ACTION: spawn ALL finders NOW.
+ANCHOR (re-verify HEAD; backlog=TODO.md): FFI all via @bun-win32/kernel32; biome not prettier; tsc0; 3 integration suites (self-process/rocket-league/wow64) + RL benchmark shipped; 32-bit primitives width-corrected, containers pending (TODO recipe); RocketLeague.exe live. FIRST ACTION: spawn ALL finders NOW.

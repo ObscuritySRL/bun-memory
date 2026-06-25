@@ -27,9 +27,10 @@ const client = cs2.modules['client.dll']; // Module: modBaseAddr, modBaseSize, m
 - **Scratch reuse is the default.** Scalar/vector/color/matrix accessors read into a per-instance
   `Scratch` (cached `.ptr`, no per-call allocation). For zero-alloc bulk reads, pass your own buffer to
   `read(address, scratch)` / the typed-array accessors in a loop.
-- **64-bit targets only (for now).** Architecture is detected once at attach via IsWow64Process2 and
-  exposed as `is32Bit`; the pointer-shaped reads still assume 64-bit, and `call()` throws on 32-bit
-  targets. See TODO.md.
+- **32-bit (WOW64) is partially supported.** Architecture is detected once at attach via IsWow64Process2
+  and exposed as `is32Bit`. The pointer primitives (`uPtr`, `uPtrArray`, `follow`, `vTable`, `vFunction`)
+  are width-corrected for 32-bit targets; the engine-container header offsets (`tArray*`, `utlVector*`,
+  `utlLinkedListU64`) still assume 64-bit, and `call()` throws on 32-bit. See TODO.md.
 - **Errors** are `Win32Error` (`.code`, `.what`) with a FormatMessageW message. `follow()` returns
   `-1n` on a null link; search methods return `-1n` / `[]` on no match.
 

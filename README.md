@@ -164,7 +164,12 @@ while (true) {
 ## Notes
 
 - Windows only. Bun runtime required.
+- Targets are 64-bit by default. 32-bit (WOW64) targets are detected at attach (`is32Bit`); the pointer
+  primitives (`uPtr`, `uPtrArray`, `follow`, `vTable`, `vFunction`) are width-corrected for them, while
+  the engine-container accessors (`tArray*`, `utlVector*`) and `call()` remain 64-bit only.
 
 ---
 
-For real-world usage, see [example/trigger-bot.ts](example/trigger-bot.ts).
+For real-world usage, see [example/trigger-bot.ts](example/trigger-bot.ts). The accessors are exercised
+against a real x64 game in [example/rocket-league.integration.ts](example/rocket-league.integration.ts)
+and against a live 32-bit process in [example/wow64.integration.ts](example/wow64.integration.ts).
