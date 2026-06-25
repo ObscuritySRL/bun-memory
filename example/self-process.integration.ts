@@ -383,3 +383,95 @@ describe('reliability', () => {
     expect(() => instance[Symbol.dispose]()).not.toThrow();
   });
 });
+
+describe('coverage: more typed arrays', () => {
+  test('i8/u16/i32/i64/f64 arrays', () => {
+    const i8 = new Int8Array([-1, 2, -3]);
+    expect([...self.i8Array(at(i8), 3)]).toEqual([-1, 2, -3]);
+    const u16 = new Uint16Array([1000, 2000, 3000]);
+    expect([...self.u16Array(at(u16), 3)]).toEqual([1000, 2000, 3000]);
+    const i32 = new Int32Array([-5, 6]);
+    expect([...self.i32Array(at(i32), 2)]).toEqual([-5, 6]);
+    const i64 = new BigInt64Array([-1n, 2n]);
+    expect([...self.i64Array(at(i64), 2)]).toEqual([-1n, 2n]);
+    const f64 = new Float64Array([1.5, -2.25]);
+    expect([...self.f64Array(at(f64), 2)]).toEqual([1.5, -2.25]);
+  });
+});
+
+describe('coverage: matrices and raw forms', () => {
+  test('matrix3x3 / matrix3x4', () => {
+    const m9 = new Float32Array(9).map((_, index) => index + 1);
+    expect([...self.matrix3x3(at(m9))]).toEqual([...m9]);
+    const m12 = new Float32Array(12).map((_, index) => index + 1);
+    expect([...self.matrix3x4(at(m12))]).toEqual([...m12]);
+  });
+
+  test('vector3Raw / qAngleRaw / quaternionRaw / rgbRaw / rgbaRaw', () => {
+    const v3 = new Float32Array([1, 2, 3]);
+    expect([...self.vector3Raw(at(v3))]).toEqual([1, 2, 3]);
+    expect([...self.qAngleRaw(at(v3))]).toEqual([1, 2, 3]);
+    const v4 = new Float32Array([1, 2, 3, 4]);
+    expect([...self.quaternionRaw(at(v4))]).toEqual([1, 2, 3, 4]);
+    const rgba = Buffer.from([10, 20, 30, 40]);
+    expect([...self.rgbRaw(at(rgba))]).toEqual([10, 20, 30]);
+    expect([...self.rgbaRaw(at(rgba))]).toEqual([10, 20, 30, 40]);
+  });
+
+  test('vector3ArrayRaw + pointArray write', () => {
+    const raw = new Float32Array([1, 2, 3, 4, 5, 6]);
+    expect([...self.vector3ArrayRaw(at(raw), 2)]).toEqual([1, 2, 3, 4, 5, 6]);
+    const destination = new Float32Array(4);
+    self.pointArray(at(destination), [
+      { x: 1, y: 2 },
+      { x: 3, y: 4 },
+    ]);
+    expect([...destination]).toEqual([1, 2, 3, 4]);
+  });
+});
+
+describe('coverage: more containers', () => {
+  test('tArrayU64 / tArrayI32 / tArrayUPtr', () => {
+    const u64 = new BigUint64Array([1n, 2n, 0xdeadn]);
+    const u64Header = Buffer.alloc(0x10);
+    u64Header.writeBigUInt64LE(at(u64), 0x00);
+    u64Header.writeUInt32LE(3, 0x08);
+    expect([...self.tArrayU64(at(u64Header))]).toEqual([1n, 2n, 0xdeadn]);
+    expect([...self.tArrayUPtr(at(u64Header))]).toEqual([1n, 2n, 0xdeadn]);
+
+    const i32 = new Int32Array([-1, 2, -3]);
+    const i32Header = Buffer.alloc(0x10);
+    i32Header.writeBigUInt64LE(at(i32), 0x00);
+    i32Header.writeUInt32LE(3, 0x08);
+    expect([...self.tArrayI32(at(i32Header))]).toEqual([-1, 2, -3]);
+  });
+
+  test('tArrayWChar (UTF-16, count includes null)', () => {
+    const data = Buffer.alloc(16);
+    data.write('hi', 0, 'utf16le');
+    const header = Buffer.alloc(0x10);
+    header.writeBigUInt64LE(at(data), 0x00);
+    header.writeUInt32LE(3, 0x08); // 2 chars + null terminator
+    expect(self.tArrayWChar(at(header))).toBe('hi');
+  });
+
+  test('tArrayRaw (array of fixed-size buffers)', () => {
+    const data = Buffer.from([1, 2, 3, 4, 5, 6]);
+    const header = Buffer.alloc(0x10);
+    header.writeBigUInt64LE(at(data), 0x00);
+    header.writeUInt32LE(3, 0x08);
+    expect(self.tArrayRaw(at(header), 2).map((buffer) => [...buffer])).toEqual([
+      [1, 2],
+      [3, 4],
+      [5, 6],
+    ]);
+  });
+
+  test('utlVectorU64', () => {
+    const elements = new BigUint64Array([10n, 20n, 30n]);
+    const header = Buffer.alloc(0x10);
+    header.writeUInt32LE(3, 0x00);
+    header.writeBigUInt64LE(at(elements), 0x08);
+    expect([...self.utlVectorU64(at(header))]).toEqual([10n, 20n, 30n]);
+  });
+});
