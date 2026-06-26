@@ -16,6 +16,19 @@ Maintained alongside the code (see prompts/BUILD.md). `[x]` done; `[ ]` remainin
 
 ## Done — this session
 
+- [x] **fix(tarray):** tArrayChar/tArrayWChar writes now emit the trailing null terminator their header
+  count includes (it was counted but never written, leaving stale bytes in the target backing store; the
+  library's own count-1 read masked it). Pinned by two new self-process write tests asserting the
+  terminator byte/word.
+- [x] **chore(footprint):** removed the game/offset-dependent examples — the CS2 benchmark.ts/trigger-bot.ts
+  + the 15,126-line example/offsets/client_dll.json dump, and the rocket-league.integration.ts/
+  benchmark-rocket-league.ts/rocket-league-chat.ts trio (+ the @rlsdk devDep). The committed gates are now
+  the deterministic self-process harness + the spawned-SysWOW64 suite; RL stays verifiable live via the
+  throwaway _live_rl.ts (run this session vs RocketLeague.exe — OK). Synced README/AI.md/package.json/
+  CHANGELOG/prompts so no doc references a deleted file or script.
+
+## Done — earlier sessions
+
 - [x] **fix:** PROCESSENTRY32W field offsets — cntThreads/th32ParentProcessID/pcPriClassBase were each
   one DWORD too low (read th32ModuleID/cntThreads/parentPID respectively). Corrected to 0x1c/0x20/0x24;
   pinned by a self-process test (cntThreads>=1; pcPriClassBase in 1..31, never a PID).
@@ -36,7 +49,7 @@ Maintained alongside the code (see prompts/BUILD.md). `[x]` done; `[ ]` remainin
 - [x] **docs/refactor:** utlVectorRaw JSDoc completed; bits() range corrected to 1-31 (1<<32===1);
   invalid `using const` disposal examples fixed; Win32Error `private static` -> `static #`.
 
-## Done — earlier sessions
+## Done — older sessions
 
 - [x] @bun-win32/* update (kernel32 1.0.26, core 1.1.4); sourced CreateRemoteThread/WaitForSingleObject +
   FormatMessageW from kernel32 (no manual dlopen); @rlsdk/epic-games -> devDep; biome replaces prettier.

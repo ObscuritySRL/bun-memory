@@ -11,7 +11,7 @@ All notable changes to **bun-memory** are documented in this file.
 - `f16` / `f16Array` — IEEE half-precision (binary16) scalar and typed-array accessors.
 - 32-bit (WOW64) target detection at attach through `IsWow64Process2`, exposed as `is32Bit`, with width-correct pointer primitives on a 32-bit target — `uPtr`, `uPtrArray`, `follow`, `vTable`, and `vFunction` read 4-byte pointers zero-extended, so `LargeAddressAware` pointers above 2 GB survive. Engine containers (`tArray*` / `utlVector*`) stay 64-bit and `call()` still rejects a 32-bit target rather than running 64-bit shellcode against it.
 - `Process` surfaces the snapshot's `cntThreads`, `pcPriClassBase`, `szExeFile`, and `th32ParentProcessID`, and makes `th32ProcessID` public.
-- Integration test suites (`bun run test`, plus the `test:rocket-league` / `test:wow64` scripts): a self-process harness covering ~49 cases (including `call()` argument marshaling and `close`/dispose idempotency), plus gated live suites that prove the read path against a real `RocketLeague.exe` and a spawned SysWOW64 target.
+- Integration test suites (`bun run test` and `bun run test:wow64`): a deterministic self-process harness covering 50+ cases (including `call()` argument marshaling and `close`/dispose idempotency), plus a gated live suite that proves the accessors against a spawned SysWOW64 (32-bit) target.
 - `AI.md`, a one-page surface map of the ~90-method API.
 
 ### Changed
@@ -30,6 +30,7 @@ All notable changes to **bun-memory** are documented in this file.
 - `PROCESSENTRY32W` field offsets — the x64 layout pads `th32ProcessID` for 8-byte alignment, so `cntThreads`, `th32ParentProcessID`, and `pcPriClassBase` were each read one slot low and returned wrong values; they are now read at the correct offsets (`0x1c`, `0x20`, `0x24`).
 - Constructor handle leak — if `refresh()` threw after `OpenProcess` succeeded, both the process and snapshot handles leaked; both are now closed before rethrowing.
 - `close()` (and the `Symbol.dispose` / `Symbol.asyncDispose` paths) is idempotent through a `#closed` guard, so a recycled handle cannot be double-closed.
+- `tArrayChar` / `tArrayWChar` writes now emit the trailing null terminator their header count includes; previously the count claimed a terminator that was never written, leaving stale bytes in the target's backing store.
 - Hardened the `wideString` null-terminator scan.
 
 ## [1.2.1] - 2026-01-16

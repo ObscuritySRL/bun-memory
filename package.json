@@ -10,7 +10,6 @@
   "module": "index.ts",
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",
-    "@rlsdk/epic-games": "^1.0.2",
     "@types/bun": "latest"
   },
   "peerDependencies": {
@@ -50,15 +49,11 @@
   "private": false,
   "scripts": {
     "format": "biome format --write .",
-    "run:benchmark": "bun ./example/benchmark.ts",
-    "run:benchmark-rocket-league": "bun ./example/benchmark-rocket-league.ts",
-    "run:trigger-bot": "bun ./example/trigger-bot.ts",
     "test": "bun test ./example/self-process.integration.ts",
-    "test:rocket-league": "bun test ./example/rocket-league.integration.ts",
     "test:wow64": "bun test ./example/wow64.integration.ts"
   },
   "type": "module",
   "dependencies": {
-    "@bun-win32/kernel32": "^1.0.26"
+    "@bun-win32/kernel32": "2.0.1"
   }
 }

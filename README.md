@@ -170,6 +170,7 @@ while (true) {
 
 ---
 
-For real-world usage, see [example/trigger-bot.ts](example/trigger-bot.ts). The accessors are exercised
-against a real x64 game in [example/rocket-league.integration.ts](example/rocket-league.integration.ts)
-and against a live 32-bit process in [example/wow64.integration.ts](example/wow64.integration.ts).
+For runnable usage, see [example/self-process.integration.ts](example/self-process.integration.ts) —
+the deterministic gate (`bun run test`) that allocates in-process and reads each accessor back. The
+accessors are also exercised against a live 32-bit process in
+[example/wow64.integration.ts](example/wow64.integration.ts) (`bun run test:wow64`).

@@ -18,8 +18,8 @@ LOOP (parallel): REAL win→(a) CAP/REDESIGN→DESIGN HUDDLE: ≥2 critics (1 ad
 
 RESOLUTION: COMPLETE only when in ONE turn EVERY lane CLEAN-w-evidence AND tsc --noEmit=0 AND smoke/integration green→STOP; else self-loop, NEVER stop while ANY lane finds. Only REAL finding blocks; converge w/o invention=valid.
 
-VERIFY LIVE: prove R/W via self-process integration (alloc→read-back→assert) AND live RocketLeague.exe (x64, running) via RLSDK (@rlsdk/epic-games devDep ≈ D:\Projects\rlsdk\packages\epic-games); example/*.integration.ts; BENCHMARK each slice; CLOSE ∀ handle (double-close safe).
+VERIFY LIVE: prove R/W via self-process integration (alloc→read-back→assert) AND live RocketLeague.exe (x64, running) via the throwaway _live_rl.ts; example/*.integration.ts; BENCHMARK each slice via _bench_perf.ts; CLOSE ∀ handle (double-close safe).
 
 LAW (AGENTS.md): surgical diffs; NO casts (fix types); #private; full-word names; alphabetize; tsc0+biome ∀ change; bun:ffi only; NO unrequested abstraction; Conventional Commits 1/slice; owner releases (no publish).
 
-ANCHOR (re-verify HEAD; backlog=TODO.md): FFI all via @bun-win32/kernel32; biome not prettier; tsc0; 3 integration suites (self-process/rocket-league/wow64) + RL benchmark shipped; 32-bit primitives width-corrected, containers pending (TODO recipe); RocketLeague.exe live. FIRST ACTION: spawn ALL finders NOW.
+ANCHOR (re-verify HEAD; backlog=TODO.md): FFI all via @bun-win32/kernel32; biome not prettier; tsc0; 2 committed suites (self-process gate + wow64 spawn); RL/CS2 examples dropped (footprint), RL live via throwaway _live_rl.ts; 32-bit prims width-corrected, containers pending (TODO recipe). FIRST ACTION: spawn ALL finders NOW.
