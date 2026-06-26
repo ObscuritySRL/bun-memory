@@ -144,19 +144,17 @@ class Process {
       throw new Win32Error('CreateToolhelp32Snapshot', GetLastError());
     }
 
+    using snapshot = { handle: hSnapshot, [Symbol.dispose]: () => CloseHandle(hSnapshot) };
+
     const lppeBuffer = Buffer.allocUnsafe(0x238 /* sizeof(PROCESSENTRY32W) */);
     /* */ lppeBuffer.writeUInt32LE(0x238 /* sizeof(PROCESSENTRY32W) */);
 
     const lppe = lppeBuffer.ptr;
 
-    const bProcess32FirstW = Process32FirstW(hSnapshot, lppe);
+    const bProcess32FirstW = Process32FirstW(snapshot.handle, lppe);
 
     if (!bProcess32FirstW) {
-      const lastError = GetLastError();
-
-      CloseHandle(hSnapshot);
-
-      throw new Win32Error('Process32FirstW', lastError);
+      throw new Win32Error('Process32FirstW', GetLastError());
     }
 
     do {
@@ -176,11 +174,7 @@ class Process {
       const hProcess = OpenProcess(desiredAccess, inheritHandle, th32ProcessID);
 
       if (hProcess === 0n) {
-        const lastError = GetLastError();
-
-        CloseHandle(hSnapshot);
-
-        throw new Win32Error('OpenProcess', lastError);
+        throw new Win32Error('OpenProcess', GetLastError());
       }
 
       this.#modules = {};
@@ -199,7 +193,6 @@ class Process {
         const lastError = GetLastError();
 
         CloseHandle(hProcess);
-        CloseHandle(hSnapshot);
 
         throw new Win32Error('IsWow64Process2', lastError);
       }
@@ -212,17 +205,12 @@ class Process {
         this.refresh();
       } catch (error) {
         CloseHandle(hProcess);
-        CloseHandle(hSnapshot);
 
         throw error;
       }
 
-      CloseHandle(hSnapshot);
-
       return;
-    } while (Process32NextW(hSnapshot, lppe));
-
-    CloseHandle(hSnapshot);
+    } while (Process32NextW(snapshot.handle, lppe));
 
     throw new Error(`Process not found: ${identifier}.`);
   }
@@ -562,18 +550,16 @@ class Process {
         throw new Win32Error('CreateRemoteThread', GetLastError());
       }
 
-      try {
-        const waitResult = WaitForSingleObject(hThread, INFINITE);
+      using thread = { handle: hThread, [Symbol.dispose]: () => CloseHandle(hThread) };
 
-        if (waitResult === WAIT_FAILED) {
-          throw new Win32Error('WaitForSingleObject', GetLastError());
-        }
+      const waitResult = WaitForSingleObject(thread.handle, INFINITE);
 
-        if (waitResult !== WAIT_OBJECT_0) {
-          throw new Error(`WaitForSingleObject returned ${waitResult}.`);
-        }
-      } finally {
-        CloseHandle(hThread);
+      if (waitResult === WAIT_FAILED) {
+        throw new Win32Error('WaitForSingleObject', GetLastError());
+      }
+
+      if (waitResult !== WAIT_OBJECT_0) {
+        throw new Error(`WaitForSingleObject returned ${waitResult}.`);
       }
 
       if (returns === FFIType.void) {
@@ -750,18 +736,16 @@ class Process {
       throw new Win32Error('CreateToolhelp32Snapshot', GetLastError());
     }
 
+    using snapshot = { handle: hSnapshot, [Symbol.dispose]: () => CloseHandle(hSnapshot) };
+
     const lpme = this.#Scratch1080;
     const lpmeBuffer = lpme.buffer;
     /* */ lpmeBuffer.writeUInt32LE(0x438 /* sizeof(MODULEENTRY32W) */);
 
-    const bModule32FirstW = Module32FirstW(hSnapshot, lpme.ptr);
+    const bModule32FirstW = Module32FirstW(snapshot.handle, lpme.ptr);
 
     if (!bModule32FirstW) {
-      const lastError = GetLastError();
-
-      CloseHandle(hSnapshot);
-
-      throw new Win32Error('Module32FirstW', lastError);
+      throw new Win32Error('Module32FirstW', GetLastError());
     }
 
     const modules: Record<string, Module> = {};
@@ -774,9 +758,7 @@ class Process {
       const szModule = module.szModule;
 
       modules[szModule] = module;
-    } while (Module32NextW(hSnapshot, lpme.ptr));
-
-    CloseHandle(hSnapshot);
+    } while (Module32NextW(snapshot.handle, lpme.ptr));
 
     this.#modules = Object.freeze(modules);
 
