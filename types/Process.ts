@@ -9,7 +9,7 @@ import type { FFIType, FFITypeOrString, FFITypeToArgsType, FFITypeToReturnsType,
  * cs2.read(0x12345678n, myBuffer);
  * ```
  */
-export type BufferLike = BigInt64Array | BigUint64Array | Buffer | Float16Array | Float32Array | Float64Array | DataView | Int16Array | Int32Array | Int8Array | Uint16Array | Uint8Array | Uint8ClampedArray | Uint32Array;
+export type BufferLike = BigInt64Array | BigUint64Array | Buffer | DataView | Float16Array | Float32Array | Float64Array | Int16Array | Int32Array | Int8Array | Uint16Array | Uint32Array | Uint8Array | Uint8ClampedArray;
 
 export type CallArgument<Type extends FFITypeOrString> =
   ToFFIType<Type> extends FFIType.bool ? boolean : ToFFIType<Type> extends FFIType.cstring | FFIType.function | FFIType.ptr | FFIType.pointer ? CallPointer | null : FFITypeToArgsType[ToFFIType<Type>];
@@ -35,14 +35,14 @@ export type CallSignature = {
 export type HexChar = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
 
 /**
- * A wildcard byte pattern that matches any byte.
- */
-export type PatternWildcard = '**' | '??';
-
-/**
  * A single byte in a pattern (two hex chars or a wildcard).
  */
 export type PatternByte = `${HexChar}${HexChar}` | PatternWildcard;
+
+/**
+ * A wildcard byte pattern that matches any byte.
+ */
+export type PatternWildcard = '**' | '??';
 
 /**
  * Represents a 2D point.
@@ -60,6 +60,26 @@ export type Point = {
   /** Y coordinate. */
   y: number;
 };
+
+/**
+ * Represents an orientation using Euler angles.
+ * @property pitch Pitch (X axis).
+ * @property roll Roll (Z axis).
+ * @property yaw Yaw (Y axis).
+ * @example
+ * ```ts
+ * const cs2 = new Process('cs2.exe');
+ * const myQAngle = cs2.qAngle(0x12345678n);
+ * ```
+ */
+export interface QAngle {
+  /** Pitch (X axis). */
+  pitch: number;
+  /** Roll (Z axis). */
+  roll: number;
+  /** Yaw (Y axis). */
+  yaw: number;
+}
 
 /**
  * Represents a quaternion for 3D rotations.
@@ -83,26 +103,6 @@ export type Quaternion = {
   /** Z component. */
   z: number;
 };
-
-/**
- * Represents an orientation using Euler angles.
- * @property pitch Pitch (X axis).
- * @property roll Roll (Z axis).
- * @property yaw Yaw (Y axis).
- * @example
- * ```ts
- * const cs2 = new Process('cs2.exe');
- * const myQAngle = cs2.qAngle(0x12345678n);
- * ```
- */
-export interface QAngle {
-  /** Pitch (X axis). */
-  pitch: number;
-  /** Roll (Z axis). */
-  roll: number;
-  /** Yaw (Y axis). */
-  yaw: number;
-}
 
 /**
  * Represents an RGB color.
@@ -147,6 +147,10 @@ export type RGBA = {
   a: number;
 };
 
+export type UPtr = bigint;
+
+export type UPtrArray = BigUint64Array;
+
 /**
  * Represents a 2D vector.
  * @property x X coordinate.
@@ -163,10 +167,6 @@ export type Vector2 = {
   /** Y coordinate. */
   y: number;
 };
-
-export type UPtr = bigint;
-
-export type UPtrArray = BigUint64Array;
 
 /**
  * Represents a 3D vector.
