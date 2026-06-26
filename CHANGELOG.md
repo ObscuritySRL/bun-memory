@@ -4,6 +4,9 @@ All notable changes to **bun-memory** are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- `pattern()` and `query()` re-pin the `VirtualQueryEx` buffer pointer on every call. The scan buffer's backing store can be relocated by the GC between iterations, so a pointer captured once went stale after the first region — `VirtualQueryEx` then wrote to the old address while the struct getters read the moved buffer, freezing the region walk and hanging (or ballooning memory under `all`) on any multi-region span. Single-region scans were unaffected, which is why it shipped; a self-process regression test now walks a three-region allocation.
+
 ## [2.0.0] - 2026-06-25
 
 ### Added

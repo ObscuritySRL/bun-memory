@@ -298,6 +298,19 @@ describe('pointer machinery', () => {
     expect(self.pattern('deadbeff', address, 0x100)).toBe(-1n);
     expect(self.pattern('deadbeef', address, 0x100, true)).toEqual([address + 0x40n]);
   });
+
+  test('pattern() walks multiple regions without hanging (regression: stale VirtualQueryEx buffer pointer)', () => {
+    // Split one allocation into three adjacent MEM_COMMIT regions by re-protecting the middle page,
+    // then hide the needle in the THIRD region so the scan must advance region0 -> region1 -> region2
+    // via VirtualQueryEx. A cached query buffer pointer that the GC relocated mid-walk froze lpAddress
+    // at region0 and looped forever; bun test's per-test timeout would catch a regression.
+    const region = self.alloc(0x3000);
+    self.protection(region + 0x1000n, 0x1000, 0x02 /* PAGE_READONLY */);
+    self.u32(region + 0x2000n + 0x40n, 0xdeadbeef); // 'efbeadde' little-endian, in the third region
+    expect(self.pattern('efbeadde', region, 0x3000)).toBe(region + 0x2000n + 0x40n);
+    expect(self.pattern('00112233445566778899aabbccddeeff', region, 0x3000)).toBe(-1n); // full no-match traversal
+    self.free(region);
+  });
 });
 
 describe('engine containers', () => {

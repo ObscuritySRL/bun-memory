@@ -3966,7 +3966,10 @@ class Process {
 
     const results: bigint[] = [];
 
-    while (lpAddress < end && VirtualQueryEx(hProcess, lpAddress, mbi.ptr, dwLength) === dwLength) {
+    // Re-pin ptr(mbi.buffer) every call: the GC can relocate the buffer's backing store between
+    // iterations, which would leave the cached mbi.ptr writing to a stale address while the getters
+    // read the moved buffer — freezing lpAddress and looping forever on any multi-region span.
+    while (lpAddress < end && VirtualQueryEx(hProcess, lpAddress, ptr(mbi.buffer), dwLength) === dwLength) {
       const base = mbi.BaseAddress;
       const size = mbi.RegionSize;
       const state = mbi.State;
@@ -4077,14 +4080,15 @@ class Process {
 
     const lpBufferBuffer = Buffer.allocUnsafe(0x30);
 
-    const lpBuffer = ptr(lpBufferBuffer);
     const dwLength = 0x30n; /* sizeof(MEMORY_BASIC_INFORMATION) */
 
     const query: ReturnType<Process['query']> = [];
 
     let lpAddress = 0n;
 
-    const bVirtualQueryEx = VirtualQueryEx(hProcess, lpAddress, lpBuffer, dwLength);
+    // Re-pin ptr(lpBufferBuffer) every call: the GC can relocate the buffer between iterations, so a
+    // cached pointer would go stale (see pattern()) and corrupt the walk.
+    const bVirtualQueryEx = VirtualQueryEx(hProcess, lpAddress, ptr(lpBufferBuffer), dwLength);
 
     if (!bVirtualQueryEx) {
       throw new Win32Error('VirtualQueryEx', GetLastError());
@@ -4096,7 +4100,7 @@ class Process {
       query.push(memoryBasicInformation);
 
       lpAddress = memoryBasicInformation.BaseAddress + memoryBasicInformation.RegionSize;
-    } while (!!VirtualQueryEx(hProcess, lpAddress, lpBuffer, dwLength));
+    } while (!!VirtualQueryEx(hProcess, lpAddress, ptr(lpBufferBuffer), dwLength));
 
     return query;
   }
