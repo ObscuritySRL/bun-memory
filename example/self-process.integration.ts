@@ -316,6 +316,18 @@ describe('engine containers', () => {
     expect(self.tArrayChar(at(header))).toBe('hello');
   });
 
+  test('tArrayChar write sets count and emits the null terminator it counts', () => {
+    const data = Buffer.alloc(16, 0xff); // pre-fill so a missing terminator is visible
+    data.write('hello\0', 0, 'utf8');
+    const header = Buffer.alloc(0x10);
+    header.writeBigUInt64LE(at(data), 0x00);
+    header.writeUInt32LE(6, 0x08);
+    self.tArrayChar(at(header), 'hi');
+    expect(header.readUInt32LE(0x08)).toBe(3); // 2 chars + null
+    expect([...data.subarray(0, 3)]).toEqual([0x68, 0x69, 0x00]); // 'h', 'i', '\0'
+    expect(self.tArrayChar(at(header))).toBe('hi');
+  });
+
   test('tArrayF32 empty count returns empty array', () => {
     const header = Buffer.alloc(0x10);
     header.writeBigUInt64LE(at(Buffer.alloc(8)), 0x00);
@@ -472,6 +484,17 @@ describe('coverage: more containers', () => {
     const header = Buffer.alloc(0x10);
     header.writeBigUInt64LE(at(data), 0x00);
     header.writeUInt32LE(3, 0x08); // 2 chars + null terminator
+    expect(self.tArrayWChar(at(header))).toBe('hi');
+  });
+
+  test('tArrayWChar write sets count and emits the wide null terminator it counts', () => {
+    const data = Buffer.alloc(16, 0xff); // pre-fill so a missing terminator is visible
+    const header = Buffer.alloc(0x10);
+    header.writeBigUInt64LE(at(data), 0x00);
+    header.writeUInt32LE(6, 0x08);
+    self.tArrayWChar(at(header), 'hi');
+    expect(header.readUInt32LE(0x08)).toBe(3); // 2 chars + null
+    expect(data.readUInt16LE(0x04)).toBe(0x0000); // wide terminator after 'h','i'
     expect(self.tArrayWChar(at(header))).toBe('hi');
   });
 

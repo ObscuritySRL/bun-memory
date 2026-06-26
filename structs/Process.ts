@@ -2103,9 +2103,13 @@ class Process {
       return scratch.toString('utf8');
     }
 
-    const scratch = Buffer.from(value, 'utf8');
+    const bytes = Buffer.from(value, 'utf8');
+    const scratch = Buffer.allocUnsafe(bytes.length + 0x01);
 
-    this.u32(address + 0x08n, scratch.length + 0x01, force);
+    bytes.copy(scratch);
+    scratch[bytes.length] = 0x00;
+
+    this.u32(address + 0x08n, scratch.length, force);
 
     this.write(dataPtr, scratch, force);
 
@@ -2622,9 +2626,10 @@ class Process {
       return scratch.toString('utf16le');
     }
 
-    const scratch = Buffer.allocUnsafe(value.length * 0x02);
+    const scratch = Buffer.allocUnsafe((value.length + 0x01) * 0x02);
 
     scratch.write(value, 0, 'utf16le');
+    scratch.writeUInt16LE(0x0000, value.length * 0x02);
 
     this.u32(address + 0x08n, value.length + 0x01, force);
 
