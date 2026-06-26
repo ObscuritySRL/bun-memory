@@ -3112,11 +3112,12 @@ class Process {
 
     if (values === undefined) {
       const size = this.#Scratch16.u32[0x00]!;
-      const scratch = new Uint32Array(size);
 
-      if (size === 0) {
-        return scratch;
+      if (size === 0 || elementsPtr === 0n) {
+        return new Uint32Array(0);
       }
+
+      const scratch = new Uint32Array(size);
 
       this.read(elementsPtr, scratch);
 
@@ -3155,11 +3156,12 @@ class Process {
 
     if (values === undefined) {
       const size = this.#Scratch16.u32[0x00]!;
-      const scratch = new BigUint64Array(size);
 
-      if (size === 0) {
-        return scratch;
+      if (size === 0 || elementsPtr === 0n) {
+        return new BigUint64Array(0);
       }
+
+      const scratch = new BigUint64Array(size);
 
       this.read(elementsPtr, scratch);
 

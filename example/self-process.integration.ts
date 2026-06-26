@@ -348,6 +348,13 @@ describe('engine containers', () => {
     expect([...self.utlVectorU32(at(header))]).toEqual([100, 200, 300, 400]);
   });
 
+  test('utlVectorU32 returns empty on a null elements pointer (matches utlVectorRaw)', () => {
+    const header = Buffer.alloc(0x10);
+    header.writeUInt32LE(4, 0x00); // size > 0 …
+    header.writeBigUInt64LE(0n, 0x08); // … but null elements
+    expect([...self.utlVectorU32(at(header))]).toEqual([]);
+  });
+
   test('utlVectorRaw read', () => {
     const elements = new Uint8Array([1, 2, 3, 4, 5, 6]);
     const header = Buffer.alloc(0x10);
@@ -521,5 +528,12 @@ describe('coverage: more containers', () => {
     header.writeUInt32LE(3, 0x00);
     header.writeBigUInt64LE(at(elements), 0x08);
     expect([...self.utlVectorU64(at(header))]).toEqual([10n, 20n, 30n]);
+  });
+
+  test('utlVectorU64 returns empty on a null elements pointer (matches utlVectorRaw)', () => {
+    const header = Buffer.alloc(0x10);
+    header.writeUInt32LE(3, 0x00); // size > 0 …
+    header.writeBigUInt64LE(0n, 0x08); // … but null elements
+    expect([...self.utlVectorU64(at(header))]).toEqual([]);
   });
 });
