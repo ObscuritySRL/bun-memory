@@ -130,7 +130,7 @@ const array = cs2.f32Array(0x12345678n, 4); // Float32Array of length 4
 // const array = cs2.u64Array(0x12345678n, 4);
 // const array = cs2.vector3Array(0x12345678n, 4);
 cs2.i32Array(0x12345678n, new Int32Array([1, 2, 3, 4]));
-cs2.u64Array(0x12345678n, new BigUint64Array([1, 2, 3, 4]));
+cs2.u64Array(0x12345678n, new BigUint64Array([1n, 2n, 3n, 4n]));
 cs2.vector3Array(0x12345678n, [{ x: 1, y: 2, z: 3 }]);
 ```
 

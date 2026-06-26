@@ -50,12 +50,14 @@ const client = cs2.modules['client.dll']; // Module: modBaseAddr, modBaseSize, m
 - **Colors:** `rgb`/`rgbRaw`, `rgba`/`rgbaRaw`.
 - **Engine containers:** `tArray*` (Unreal TArray: data@0x00, count@0x08 — `tArrayU8…U64`, `…I8…I64`,
   `tArrayF32/F64`, `tArrayChar`/`tArrayWChar`, `tArrayRaw`, `tArrayUPtr`), `utlVectorRaw`/`utlVectorU32`/
-  `utlVectorU64` and `utlLinkedListU64` (Source CUtlVector/CUtlLinkedList: count@0x00, elements@0x08).
+  `utlVectorU64` (Source CUtlVector: count@0x00, elements@0x08) and `utlLinkedListU64` (Source
+  CUtlLinkedList, custom reverse-engineered header — see TODO.md).
 - **Pointers / search:** `follow(address, offsets[])`, `vTable`/`vFunction`, `indexOf(needle, address,
   length, all?)`, `pattern(needle, address, length, all?)` (hex with `**`/`??` wildcards).
 - **Process / memory:** `alloc`, `free`, `protection`, `read`, `write`, `query` (region list), `refresh`
   (re-enumerate modules), `call` (execute a remote function via injected shellcode + CreateRemoteThread),
-  `close` (idempotent), `Symbol.dispose`/`Symbol.asyncDispose`.
+  `close` (idempotent), `Symbol.dispose`/`Symbol.asyncDispose`. Construct via `new Process(name | pid)`
+  or the static `Process.from(name | pid)`.
 
 ## Where to look
 
