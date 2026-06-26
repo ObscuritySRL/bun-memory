@@ -67,6 +67,17 @@ declare global {
      */
     readonly ptr: Pointer;
   }
+  interface Float16Array {
+    /**
+     * Native pointer to Float16Array memory for Bun FFI.
+     * @example
+     * ```ts
+     * const arr = new Float16Array([1, 2, 3]);
+     * nativeFunction(arr.ptr, arr.length);
+     * ```
+     */
+    readonly ptr: Pointer;
+  }
   interface Float32Array {
     /**
      * Native pointer to Float32Array memory for Bun FFI.
@@ -184,7 +195,24 @@ declare global {
  *
  * The property is non-enumerable and non-configurable. The getter calls `ptr(this)`.
  */
-const constructors = [ArrayBuffer, BigInt64Array, BigUint64Array, Buffer, DataView, Float32Array, Float64Array, Int16Array, Int32Array, Int8Array, SharedArrayBuffer, Uint16Array, Uint32Array, Uint8Array, Uint8ClampedArray] as const;
+const constructors = [
+  ArrayBuffer,
+  BigInt64Array,
+  BigUint64Array,
+  Buffer,
+  DataView,
+  Float16Array,
+  Float32Array,
+  Float64Array,
+  Int16Array,
+  Int32Array,
+  Int8Array,
+  SharedArrayBuffer,
+  Uint16Array,
+  Uint32Array,
+  Uint8Array,
+  Uint8ClampedArray,
+] as const;
 
 constructors.forEach(
   ({ prototype }) =>

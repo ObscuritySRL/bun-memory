@@ -166,6 +166,11 @@ describe('typed arrays', () => {
     expect([...destination]).toEqual([1.5, -0.5]);
   });
 
+  test('Float16Array exposes the .ptr extension like every other view', () => {
+    const view = new Float16Array([1.5, -0.5]);
+    expect(view.ptr).toBe(ptr(view)); // getter installed; matches bun:ffi ptr()
+  });
+
   test('u32Array read/write', () => {
     const source = new Uint32Array([10, 20, 30]);
     expect([...self.u32Array(at(source), 3)]).toEqual([10, 20, 30]);
