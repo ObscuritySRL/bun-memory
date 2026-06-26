@@ -2,7 +2,7 @@
 
 All notable changes to **bun-memory** are documented in this file.
 
-## [Unreleased]
+## [2.0.1] - 2026-06-26
 
 ### Changed
 - The 64-bit container header decoders — the `tArray*` data pointer and the `utlVectorRaw`/`utlVectorU32`/`utlVectorU64` elements pointer — now decode via `bun:ffi`'s `read.u64` instead of a `BigUint64Array` scratch view, finishing the `read.u64`/`read.i64` migration the scalar accessors already shipped (≈6.5 ns/decode faster in isolation, behavior-identical and zero-alloc). The 32-bit header decodes keep their `Uint32Array` view (no BigInt boxing there).
