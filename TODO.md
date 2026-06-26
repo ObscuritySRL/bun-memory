@@ -16,6 +16,32 @@ Maintained alongside the code (see prompts/BUILD.md). `[x]` done; `[ ]` remainin
 
 ## Done — this session
 
+- [x] **fix(scan) — P0 hang/OOM:** `pattern()` (and latently `query()`) looped forever on any
+  multi-region span. The `VirtualQueryEx` MBI buffer's backing store is relocated by Bun's GC between
+  iterations, but the pointer was captured once (`mbi.ptr` / a cached `ptr(lpBufferBuffer)`), so after
+  region 0 the syscall wrote to a stale address while the getters read the moved buffer — `lpAddress =
+  base + size` froze. Re-pin `ptr(buffer)` per `VirtualQueryEx` call. Verified live (bun.exe 52-region
+  span: indefinite hang → ~20 ms; `all` grew to ~11 GB → empty). Single-region scans were unaffected,
+  which is why the 1-region integration test missed it; a self-process regression test now walks a
+  3-region allocation (split via page protection, needle in the third region).
+- [x] **perf(containers):** finished the `read.u64` migration (commit 3e42bb9) that the 13 `tArray*` and
+  3 `utlVector*` x64 pointer decoders missed (`#Scratch16.u64[…]` view → `read.u64`, ~6.5 ns/decode,
+  byte-identical, pinned by the container read-back tests).
+- [x] **fix(attach):** read `GetLastError()` BEFORE `CloseHandle()` on the 4 attach/refresh failure paths
+  (Process32FirstW / OpenProcess / IsWow64Process2 / Module32FirstW), so the thrown code is the real
+  failure, not CloseHandle's leftover last-error (often 0). Regression test: denied `new Process(4)` (the
+  System process) now surfaces `Win32Error{ what: 'OpenProcess', code: 5 }`.
+- [x] **docs:** fixed a non-runnable README `BigUint64Array([1,2,3,4])` example (needs bigint literals) and
+  an AI.md offset claim that wrongly bound CUtlVector's `count@0x00/elements@0x08` to `utlLinkedListU64`
+  (it reads a custom RE'd header); added the omitted static `Process.from` to the surface map.
+- [x] **style(types):** alphabetized the `BufferLike` union and the top-level type declarations in
+  `types/Process.ts` (biome does not sort these; type-only, byte-identical).
+- [x] **perf(protection):** `protection()` now uses the cached `#Scratch4.ptr` instead of the TypedArray
+  view's recomputing `.ptr` getter (the lone site using the view getter) — one fewer `ptr()` call,
+  byte-identical, consistent with every other accessor.
+
+## Done — 2026-06-25 session
+
 - [x] **feat(32-bit containers):** width-corrected the engine containers behind `is32Bit` (x64 path
   byte-identical, moved verbatim into the `else`). tArray\* (14 methods) read the x86 12-byte header via
   #Scratch12 (Data ptr@0x00 4B, ArrayNum@0x04) and write count at +0x04; tArrayUPtr widens 4-byte element
@@ -82,24 +108,66 @@ Maintained alongside the code (see prompts/BUILD.md). `[x]` done; `[ ]` remainin
   mid-call -> CreateRemoteThread/WaitForSingleObject throws E1, then free() throws E2 which wins). NOT a
   leak (hThread always closed). Fix must rethrow the original while still surfacing a success-path free
   failure — not byte-identical, so deferred.
+- [ ] write() force-path `finally` can mask the original WriteProcessMemory error if the protection-restore
+  VirtualProtectEx ALSO fails (the finally's throw replaces the body's). Honesty-only — no handle/protection
+  leak (restore is always attempted) and the GetLastError there is immediate (correct code). Not
+  byte-identical to fix (rethrow the original while still surfacing a success-path restore failure) —
+  deferred, same class as the call() finally masking above.
 
 ## CAPABILITY — remaining (panel B)
 
-- [ ] **32-bit utlLinkedListU64.** LOW confidence: CUtlLinkedList's x86 header (where the 4-byte m_pMemory
-  lands; whether head/capacity shift) is a non-standard custom struct not derivable from canonical Source.
-  Node stride stays 0x10 (uint64 value 8-aligned even on x86). CUtlLinkedList is a Source/CS2 (x64) container
-  unlikely on a real 32-bit target — confirm the header offsets against a real 32-bit Source target before
-  shipping; do not ship a guessed layout.
-- [ ] **32-bit call().** Needs a separate x86 cdecl/stdcall shellcode emitter (the current emitter is x64
-  System V-ish via mov-regs + ff d0). Keep call() throwing on 32-bit until built + proven live.
-- [ ] **indexOf() region-safe** (walk committed regions like pattern(), stitching the seam by needle.len-1
-  bytes between address-contiguous regions). Today indexOf throws ERROR_PARTIAL_COPY on any unmapped page
-  mid-range (proven live); pattern() already survives. Prototyped 4/4 live (gap-survive, seam-straddle,
-  all, no-match). Behavior change (region-safe default vs throw) -> own gated slice + exhaustive tests;
-  subsumes nothing already shipped. Cost vs current single-region indexOf: ~+800ns/+1 VQE on the happy path.
-- [ ] `pointersTo(target, address, length, all?)` pointer scan (inverse of follow) — composable as
-  indexOf(targetAsLEbytes, address, length, all) + an aligned filter; value-add is is32Bit-aware needle
-  width + alignment + inherited region-safety. Build only AFTER region-safe indexOf and with a 32-bit target.
+- [ ] **32-bit utlLinkedListU64.** HIGH-confidence NO-GO (was LOW). The shipped x64 layout is itself a
+  reverse-engineered, non-canonical struct: the element pointer is read at 0x08 and capacity at 0x02, which
+  do NOT match canonical Valve CUtlMemory (`m_pMemory@0x00`, `m_nAllocationCount@0x08`) — so there is no
+  authoritative struct to narrow to x86, and guessing the x86 offsets would violate "no guessed layouts."
+  CUtlLinkedList is a Source 2 / CS2 (x64-only) container, so no real 32-bit target exercises it. Node
+  stride 0x10 does survive on x86 (8-aligned uint64), but that alone is insufficient. Keep x64-only.
+- [ ] **32-bit call().** NO-GO — reasoning corrected: it is NOT untestable (the prior "needs a real 32-bit
+  target to call into" objection is wrong). A self-contained x86 stub written into the spawned SysWOW64
+  process proves the whole path with no export resolver — e.g. `8B 44 24 04 / 40 / C2 04 00`
+  (`mov eax,[esp+4]; inc eax; ret 4`). The real blocker is that the public `CallSignature` carries no
+  calling-convention selector: x64 Windows has one ABI, x86 has cdecl/stdcall/thiscall/fastcall that differ
+  in stack cleanup and arg location, so an x86 emitter needs info the type doesn't carry — adding
+  `convention?` is a public-API change requiring an explicit owner request. Also needs a separate x86 emitter
+  and a `ret 4` thread-proc (x86 CreateRemoteThread passes one stack param). Low demand. Keep throwing on 32-bit.
+- [ ] **region-safe indexOf — NO-GO as new surface** (reframed; the pattern() multi-region fix lands the
+  real win). With pattern() fixed, `pattern(needle.toString('hex'), address, length, all)` IS region-safe
+  exact-byte search with zero new surface — a pure-hex needle collapses to one anchor token, and pattern()
+  already skips unmapped pages where indexOf throws ERROR_PARTIAL_COPY. Optional: document the composition in
+  indexOf's JSDoc. The one true gap — a needle straddling two address-contiguous regions of differing
+  protection — is record-only (near-zero demand; pattern() doesn't stitch either). If ever wanted, stitch in
+  pattern()'s loop (carry needle.len-1 trailing bytes when next base == previous regionEnd), not a new method.
+- [ ] `pointersTo` **— NO-GO as bespoke surface** (reframed). Composes directly on the fixed pattern():
+  `pattern(targetHexLE, address, length, true)` + an aligned filter; width is `is32Bit ? 4-byte LE : 8-byte
+  LE` (a ~2-line caller-side encode). The prerequisite was the pattern() fix, not a new region-safe indexOf.
+  Revisit a dedicated method only if a measured batch/ergonomic win is shown against that composition on a
+  real 32-bit target.
+
+### Design-doubt — record-only (panel-B hypotheses; do NOT implement under harden)
+
+- **indexOf() vs pattern() contract divergence.** indexOf() throws on an unmapped page anywhere in
+  [address, length); its sibling pattern() is region-safe and skips uncommitted pages — same conceptual
+  op, opposite failure semantics. Making indexOf region-safe is a behavior change (throw -> -1n/partial)
+  so it would need its own gated slice; the zero-surface alternative is `pattern(needle.toString('hex'),
+  …)` (see the region-safe-indexOf capability note). Otherwise document the divergence so callers know
+  indexOf != pattern on unmapped pages.
+- **tArrayRaw vs utlVectorRaw overload shapes disagree.** tArrayRaw discriminates its 2nd positional by
+  type (`dataSize: number` read | `Buffer[]` write, stride inferred on write); utlVectorRaw makes
+  `elementSize` a REQUIRED 2nd positional on both read and write, pushing the write value to slot 3 and
+  breaking the universal `(address, value, force)` write shape. Reconciling is a breaking signature change
+  -> record-only; preferred direction if ever done is to make utlVectorRaw infer the stride like tArrayRaw.
+- **Four conventions for "a read needs extra info"** across the ~90 accessors: string/cString and tArrayRaw
+  type-discriminate the 2nd positional; utlVectorRaw uses a required 2nd positional shared by read+write;
+  indexOf/pattern use a trailing `length` + `all` flag; scalars/typed-arrays are uniformly
+  `(address)` / `(address, value, force)`. indexOf/pattern's shape is justified (needle occupies slot 2);
+  utlVectorRaw is the outlier to reconcile. Record-only.
+- **KEEP decisions (evaluated, no change):** Win32Error already exposes numeric `.code` + `.what`
+  (programmatically branchable; typed subclasses would be vanity) · `force` as a trailing boolean is correct
+  for the zero-alloc hot path (an options object allocates per write) · `read(address, scratch): T` returning
+  the same generic buffer is the right ergonomic (typed one-liners, zero cost for the reuse pattern) · the
+  ~10 `as CallReturn<Signature>` casts in call() are unavoidable without a generic-overload redesign (runtime
+  FFIType dispatch vs a compile-time conditional type) — they are the least-bad localization, not a no-cast
+  violation to "fix."
 
 ### Considered and DECLINED (do not build)
 
