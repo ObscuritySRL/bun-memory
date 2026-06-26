@@ -31,6 +31,8 @@ All notable changes to **bun-memory** are documented in this file.
 - Constructor handle leak — if `refresh()` threw after `OpenProcess` succeeded, both the process and snapshot handles leaked; both are now closed before rethrowing.
 - `close()` (and the `Symbol.dispose` / `Symbol.asyncDispose` paths) is idempotent through a `#closed` guard, so a recycled handle cannot be double-closed.
 - `tArrayChar` / `tArrayWChar` writes now emit the trailing null terminator their header count includes; previously the count claimed a terminator that was never written, leaving stale bytes in the target's backing store.
+- `utlVectorU32` / `utlVectorU64` now short-circuit to an empty result when the header reports a size but a null elements pointer (matching `utlVectorRaw`), instead of driving `ReadProcessMemory(0n)` into a `Win32Error`.
+- `Float16Array` now exposes the `.ptr` FFI accessor like every other typed-array view (the extension advertised "all TypedArray types" but had omitted it).
 - Hardened the `wideString` null-terminator scan.
 
 ## [1.2.1] - 2026-01-16
