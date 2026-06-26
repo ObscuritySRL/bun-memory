@@ -1,5 +1,3 @@
-import { Buffer } from 'node:buffer';
-
 import { type Pointer, ptr } from 'bun:ffi';
 
 import type { MemoryAllocationType, MemoryProtection } from '@bun-win32/kernel32';

@@ -1,5 +1,3 @@
-import { Buffer } from 'node:buffer';
-
 const ReplaceTrailingNull = /\0+$/;
 
 /**
