@@ -42,3 +42,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # throwaway scratch / probe / benchmark files (run locally, never committed)
 _*.ts
+
+# local working notes (kept locally, not published or pushed)
+TODO.md
+prompts/

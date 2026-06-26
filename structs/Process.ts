@@ -115,7 +115,7 @@ const WAIT_OBJECT_0 = 0x0000_0000;
  * (WOW64) targets — x86 `TArray` reads its header at `{Data@0x00 (4B); ArrayNum@0x04}` and x86
  * `CUtlVector` at `{Size@0x00; Elements@0x04 (4B)}`, with the x64 path byte-identical.
  * @todo `utlLinkedListU64` and `call()` remain 64-bit only — the x86 CUtlLinkedList header is not
- *   derivable without a real 32-bit Source target, and `call()` needs an x86 shellcode emitter (TODO.md).
+ *   derivable without a real 32-bit Source target, and `call()` needs an x86 shellcode emitter.
  *
  * @example
  * ```ts

@@ -32,7 +32,7 @@ const client = cs2.modules['client.dll']; // Module: modBaseAddr, modBaseSize, m
   `vTable`, `vFunction`) and the engine containers (`tArray*`, `utlVectorRaw`/`utlVectorU32`/
   `utlVectorU64`) are width-corrected for 32-bit targets (x86 `TArray` `{Data@0x00 4B; ArrayNum@0x04}`,
   x86 `CUtlVector` `{Size@0x00; Elements@0x04 4B}`), with the x64 path byte-identical. `utlLinkedListU64`
-  and `call()` remain 64-bit only. See TODO.md.
+  and `call()` remain 64-bit only.
 - **Errors** are `Win32Error` (`.code`, `.what`) with a FormatMessageW message. `follow()` returns
   `-1n` on a null link; search methods return `-1n` / `[]` on no match.
 
@@ -51,7 +51,7 @@ const client = cs2.modules['client.dll']; // Module: modBaseAddr, modBaseSize, m
 - **Engine containers:** `tArray*` (Unreal TArray: data@0x00, count@0x08 — `tArrayU8…U64`, `…I8…I64`,
   `tArrayF32/F64`, `tArrayChar`/`tArrayWChar`, `tArrayRaw`, `tArrayUPtr`), `utlVectorRaw`/`utlVectorU32`/
   `utlVectorU64` (Source CUtlVector: count@0x00, elements@0x08) and `utlLinkedListU64` (Source
-  CUtlLinkedList, custom reverse-engineered header — see TODO.md).
+  CUtlLinkedList, custom reverse-engineered header).
 - **Pointers / search:** `follow(address, offsets[])`, `vTable`/`vFunction`, `indexOf(needle, address,
   length, all?)`, `pattern(needle, address, length, all?)` (hex with `**`/`??` wildcards).
 - **Process / memory:** `alloc`, `free`, `protection`, `read`, `write`, `query` (region list), `refresh`
@@ -69,4 +69,3 @@ const client = cs2.modules['client.dll']; // Module: modBaseAddr, modBaseSize, m
 | The `.ptr` buffer extension   | `runtime/extensions.ts`           |
 | Runnable usage                | `example/self-process.integration.ts` (the deterministic gate, `bun run test`) |
 | Live-target proof             | `example/wow64.integration.ts` (`bun run test:wow64`) — spawns a live SysWOW64 process |
-| Backlog / deferred caps       | `TODO.md`                         |
