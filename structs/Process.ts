@@ -692,7 +692,7 @@ class Process {
     const dwSize = BigInt(length);
     const flNewProtect = protect;
     const lpAddress = address;
-    const lpflOldProtect = this.#Scratch4.u32.ptr;
+    const lpflOldProtect = this.#Scratch4.ptr;
 
     const bVirtualProtectEx = VirtualProtectEx(hProcess, lpAddress, dwSize, flNewProtect, lpflOldProtect);
 
