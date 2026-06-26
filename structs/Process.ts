@@ -152,9 +152,11 @@ class Process {
     const bProcess32FirstW = Process32FirstW(hSnapshot, lppe);
 
     if (!bProcess32FirstW) {
+      const lastError = GetLastError();
+
       CloseHandle(hSnapshot);
 
-      throw new Win32Error('Process32FirstW', GetLastError());
+      throw new Win32Error('Process32FirstW', lastError);
     }
 
     do {
@@ -174,9 +176,11 @@ class Process {
       const hProcess = OpenProcess(desiredAccess, inheritHandle, th32ProcessID);
 
       if (hProcess === 0n) {
+        const lastError = GetLastError();
+
         CloseHandle(hSnapshot);
 
-        throw new Win32Error('OpenProcess', GetLastError());
+        throw new Win32Error('OpenProcess', lastError);
       }
 
       this.#modules = {};
@@ -192,10 +196,12 @@ class Process {
       const bIsWow64Process2 = IsWow64Process2(hProcess, ptr(machineBuffer), ptr(machineBuffer, 0x02));
 
       if (!bIsWow64Process2) {
+        const lastError = GetLastError();
+
         CloseHandle(hProcess);
         CloseHandle(hSnapshot);
 
-        throw new Win32Error('IsWow64Process2', GetLastError());
+        throw new Win32Error('IsWow64Process2', lastError);
       }
 
       // pProcessMachine is IMAGE_FILE_MACHINE_UNKNOWN (0) for a native process; a non-zero
@@ -751,9 +757,11 @@ class Process {
     const bModule32FirstW = Module32FirstW(hSnapshot, lpme.ptr);
 
     if (!bModule32FirstW) {
+      const lastError = GetLastError();
+
       CloseHandle(hSnapshot);
 
-      throw new Win32Error('Module32FirstW', GetLastError());
+      throw new Win32Error('Module32FirstW', lastError);
     }
 
     const modules: Record<string, Module> = {};

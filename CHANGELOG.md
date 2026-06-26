@@ -9,6 +9,7 @@ All notable changes to **bun-memory** are documented in this file.
 
 ### Fixed
 - `pattern()` and `query()` re-pin the `VirtualQueryEx` buffer pointer on every call. The scan buffer's backing store can be relocated by the GC between iterations, so a pointer captured once went stale after the first region — `VirtualQueryEx` then wrote to the old address while the struct getters read the moved buffer, freezing the region walk and hanging (or ballooning memory under `all`) on any multi-region span. Single-region scans were unaffected, which is why it shipped; a self-process regression test now walks a three-region allocation.
+- The constructor and `refresh()` now read `GetLastError()` *before* closing the toolhelp snapshot (and, for `IsWow64Process2`, the process handle), so a failed `Process32FirstW` / `OpenProcess` / `IsWow64Process2` / `Module32FirstW` reports its real Win32 code instead of `CloseHandle`'s leftover last-error — which on the common path is 0 ("the operation completed successfully"). A denied `new Process(<protected pid>)` now surfaces `ERROR_ACCESS_DENIED` (5), pinned by a self-process regression test.
 
 ## [2.0.0] - 2026-06-25
 

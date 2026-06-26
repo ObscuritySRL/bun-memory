@@ -10,6 +10,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { FFIType, ptr } from 'bun:ffi';
 
 import Process from '../index.ts';
+import Win32Error from '../structs/Win32Error.ts';
 
 const self = new Process(process.pid);
 const at = (view: Parameters<typeof ptr>[0]): bigint => BigInt(ptr(view));
@@ -438,6 +439,21 @@ describe('reliability', () => {
     instance.close();
     expect(() => instance.close()).not.toThrow();
     expect(() => instance[Symbol.dispose]()).not.toThrow();
+  });
+
+  test('a denied OpenProcess reports the real error code, not CloseHandle leftover (regression)', () => {
+    // PID 4 (System) cannot be opened with PROCESS_ALL_ACCESS. The thrown Win32Error must carry the
+    // real failure code (5 = ERROR_ACCESS_DENIED); before the fix, CloseHandle(snapshot) ran between
+    // the failed OpenProcess and GetLastError(), so the reported code was CloseHandle's leftover (0).
+    let caught: unknown;
+    try {
+      new Process(4);
+    } catch (error) {
+      caught = error;
+    }
+    if (!(caught instanceof Win32Error)) throw new Error('expected a Win32Error from new Process(4)');
+    expect(caught.what).toBe('OpenProcess');
+    expect(caught.code).toBe(5);
   });
 });
 
