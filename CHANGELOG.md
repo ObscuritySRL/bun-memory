@@ -4,6 +4,9 @@ All notable changes to **bun-memory** are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- The 64-bit container header decoders — the `tArray*` data pointer and the `utlVectorRaw`/`utlVectorU32`/`utlVectorU64` elements pointer — now decode via `bun:ffi`'s `read.u64` instead of a `BigUint64Array` scratch view, finishing the `read.u64`/`read.i64` migration the scalar accessors already shipped (≈6.5 ns/decode faster in isolation, behavior-identical and zero-alloc). The 32-bit header decodes keep their `Uint32Array` view (no BigInt boxing there).
+
 ### Fixed
 - `pattern()` and `query()` re-pin the `VirtualQueryEx` buffer pointer on every call. The scan buffer's backing store can be relocated by the GC between iterations, so a pointer captured once went stale after the first region — `VirtualQueryEx` then wrote to the old address while the struct getters read the moved buffer, freezing the region walk and hanging (or ballooning memory under `all`) on any multi-region span. Single-region scans were unaffected, which is why it shipped; a self-process regression test now walks a three-region allocation.
 

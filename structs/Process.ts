@@ -2101,7 +2101,7 @@ class Process {
     } else {
       this.read(address, this.#Scratch16.u8);
       count = this.#Scratch16.u32[0x02]!;
-      dataPtr = this.#Scratch16.u64[0x00]!;
+      dataPtr = read.u64(this.#Scratch16.ptr, 0x00);
     }
 
     if (value === undefined) {
@@ -2156,7 +2156,7 @@ class Process {
     } else {
       this.read(address, this.#Scratch16.u8);
       count = this.#Scratch16.u32[0x02]!;
-      dataPtr = this.#Scratch16.u64[0x00]!;
+      dataPtr = read.u64(this.#Scratch16.ptr, 0x00);
     }
 
     if (values === undefined) {
@@ -2205,7 +2205,7 @@ class Process {
     } else {
       this.read(address, this.#Scratch16.u8);
       count = this.#Scratch16.u32[0x02]!;
-      dataPtr = this.#Scratch16.u64[0x00]!;
+      dataPtr = read.u64(this.#Scratch16.ptr, 0x00);
     }
 
     if (values === undefined) {
@@ -2254,7 +2254,7 @@ class Process {
     } else {
       this.read(address, this.#Scratch16.u8);
       count = this.#Scratch16.u32[0x02]!;
-      dataPtr = this.#Scratch16.u64[0x00]!;
+      dataPtr = read.u64(this.#Scratch16.ptr, 0x00);
     }
 
     if (values === undefined) {
@@ -2303,7 +2303,7 @@ class Process {
     } else {
       this.read(address, this.#Scratch16.u8);
       count = this.#Scratch16.u32[0x02]!;
-      dataPtr = this.#Scratch16.u64[0x00]!;
+      dataPtr = read.u64(this.#Scratch16.ptr, 0x00);
     }
 
     if (values === undefined) {
@@ -2352,7 +2352,7 @@ class Process {
     } else {
       this.read(address, this.#Scratch16.u8);
       count = this.#Scratch16.u32[0x02]!;
-      dataPtr = this.#Scratch16.u64[0x00]!;
+      dataPtr = read.u64(this.#Scratch16.ptr, 0x00);
     }
 
     if (values === undefined) {
@@ -2401,7 +2401,7 @@ class Process {
     } else {
       this.read(address, this.#Scratch16.u8);
       count = this.#Scratch16.u32[0x02]!;
-      dataPtr = this.#Scratch16.u64[0x00]!;
+      dataPtr = read.u64(this.#Scratch16.ptr, 0x00);
     }
 
     if (values === undefined) {
@@ -2452,7 +2452,7 @@ class Process {
     } else {
       this.read(address, this.#Scratch16.u8);
       count = this.#Scratch16.u32[0x02]!;
-      dataPtr = this.#Scratch16.u64[0x00]!;
+      dataPtr = read.u64(this.#Scratch16.ptr, 0x00);
     }
 
     if (typeof dataSizeOrValues === 'number') {
@@ -2523,7 +2523,7 @@ class Process {
     } else {
       this.read(address, this.#Scratch16.u8);
       count = this.#Scratch16.u32[0x02]!;
-      dataPtr = this.#Scratch16.u64[0x00]!;
+      dataPtr = read.u64(this.#Scratch16.ptr, 0x00);
     }
 
     if (values === undefined) {
@@ -2572,7 +2572,7 @@ class Process {
     } else {
       this.read(address, this.#Scratch16.u8);
       count = this.#Scratch16.u32[0x02]!;
-      dataPtr = this.#Scratch16.u64[0x00]!;
+      dataPtr = read.u64(this.#Scratch16.ptr, 0x00);
     }
 
     if (values === undefined) {
@@ -2621,7 +2621,7 @@ class Process {
     } else {
       this.read(address, this.#Scratch16.u8);
       count = this.#Scratch16.u32[0x02]!;
-      dataPtr = this.#Scratch16.u64[0x00]!;
+      dataPtr = read.u64(this.#Scratch16.ptr, 0x00);
     }
 
     if (values === undefined) {
@@ -2670,7 +2670,7 @@ class Process {
     } else {
       this.read(address, this.#Scratch16.u8);
       count = this.#Scratch16.u32[0x02]!;
-      dataPtr = this.#Scratch16.u64[0x00]!;
+      dataPtr = read.u64(this.#Scratch16.ptr, 0x00);
     }
 
     if (values === undefined) {
@@ -2778,7 +2778,7 @@ class Process {
     } else {
       this.read(address, this.#Scratch16.u8);
       count = this.#Scratch16.u32[0x02]!;
-      dataPtr = this.#Scratch16.u64[0x00]!;
+      dataPtr = read.u64(this.#Scratch16.ptr, 0x00);
     }
 
     if (value === undefined) {
@@ -3233,7 +3233,7 @@ class Process {
       size = this.#Scratch8.u32[0x00]!;
     } else {
       this.read(address, this.#Scratch16.u8);
-      elementsPtr = this.#Scratch16.u64[0x01]!;
+      elementsPtr = read.u64(this.#Scratch16.ptr, 0x08);
       size = this.#Scratch16.u32[0x00]!;
     }
 
@@ -3295,7 +3295,7 @@ class Process {
       size = this.#Scratch8.u32[0x00]!;
     } else {
       this.read(address, this.#Scratch16.u8);
-      elementsPtr = this.#Scratch16.u64[0x01]!;
+      elementsPtr = read.u64(this.#Scratch16.ptr, 0x08);
       size = this.#Scratch16.u32[0x00]!;
     }
 
@@ -3348,7 +3348,7 @@ class Process {
       size = this.#Scratch8.u32[0x00]!;
     } else {
       this.read(address, this.#Scratch16.u8);
-      elementsPtr = this.#Scratch16.u64[0x01]!;
+      elementsPtr = read.u64(this.#Scratch16.ptr, 0x08);
       size = this.#Scratch16.u32[0x00]!;
     }
 
