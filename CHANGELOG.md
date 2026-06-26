@@ -20,6 +20,7 @@ All notable changes to **bun-memory** are documented in this file.
 - Consolidated every Win32 symbol onto the published `@bun-win32/kernel32` binding, removing all local `dlopen` calls.
 - Converted the class internals to `#private` fields.
 - Combined the two-`ReadProcessMemory` header read into one across the `tArray` and `utlVector` accessors, inlined the `qAngle`/`rgb`/`rgba` reads, dropped a force-path allocation, reused a grow-on-demand haystack in `pattern()` and `indexOf()` (no per-call buffer allocation), and retyped the RPM/WPM byte-count out-param to `PSIZE_T`.
+- The 64-bit BigInt reads (`u64`/`i64`, and the internal decodes in `follow`/`vFunction`, so also `uPtr`/`vTable`) now decode via `bun:ffi`'s `read.u64`/`read.i64` instead of a `BigUint64Array`/`BigInt64Array` scratch view — the native read skips the view's BigInt-boxing path, ~16 ns (~6%) faster per 64-bit read and ~10 ns/hop on `follow()`, behavior-identical and zero-alloc. Number-returning scalars keep their faster TypedArray-view decode.
 - Replaced Prettier with Biome for formatting, and stopped shipping `example/*.ts` in the published package.
 
 ### Removed

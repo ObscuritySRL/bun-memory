@@ -1,6 +1,6 @@
 import '../runtime/extensions';
 
-import { CString, FFIType, ptr } from 'bun:ffi';
+import { CString, FFIType, ptr, read } from 'bun:ffi';
 
 import Kernel32, { MemoryAllocationType, MemoryProtection, ProcessAccessRights, ToolhelpSnapshotFlags } from '@bun-win32/kernel32';
 
@@ -105,7 +105,9 @@ const WAIT_OBJECT_0 = 0x0000_0000;
  *
  * Use this class to read and write memory, access modules, and work with common data structures in external processes.
  *
- * Many scalar reads utilize `TypedArray` scratches to avoid a second FFI hop, such as calling `bun:ffi.read.*`.
+ * Number-returning scalar reads decode through a `TypedArray` scratch view, which beats a second
+ * `bun:ffi.read.*` FFI hop. The 64-bit BigInt reads (`u64`/`i64`, and `follow`/`vFunction`) instead use
+ * `bun:ffi.read.u64`/`read.i64`, which is faster than the BigInt-lane view's boxing.
  *
  * The target architecture is detected once at attach via IsWow64Process2 and exposed as `is32Bit`.
  * The pointer primitives (`uPtr`, `uPtrArray`, `follow`, `vTable`, `vFunction`) and the engine
@@ -1323,7 +1325,7 @@ class Process {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return this.#Scratch8.i64[0x00]!;
+      return read.i64(this.#Scratch8.ptr, 0x00);
     }
 
     this.#Scratch8.i64[0x00] = value;
@@ -2962,7 +2964,7 @@ class Process {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      return this.#Scratch8.u64[0x00]!;
+      return read.u64(this.#Scratch8.ptr, 0x00);
     }
 
     this.#Scratch8.u64[0x00] = value;
@@ -3399,7 +3401,7 @@ class Process {
       throw new Win32Error('ReadProcessMemory', GetLastError());
     }
 
-    const vtablePtr = this.#Scratch8.u64[0x00]!;
+    const vtablePtr = read.u64(this.#Scratch8.ptr, 0x00);
 
     const bReadProcessMemory2 = !!ReadProcessMemory(hProcess, vtablePtr + BigInt(index * 0x08), this.#Scratch8.ptr, 0x08n, null);
 
@@ -3407,7 +3409,7 @@ class Process {
       throw new Win32Error('ReadProcessMemory', GetLastError());
     }
 
-    return this.#Scratch8.u64[0x00]!;
+    return read.u64(this.#Scratch8.ptr, 0x00);
   }
 
   /**
@@ -3853,7 +3855,7 @@ class Process {
         throw new Win32Error('ReadProcessMemory', GetLastError());
       }
 
-      address = this.#Scratch8.u64[0x00]!;
+      address = read.u64(this.#Scratch8.ptr, 0x00);
 
       if (address === 0n) {
         return -1n;
