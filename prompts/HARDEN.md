@@ -13,7 +13,7 @@ PANEL=parallel lanes, 1 ultracode expert/axis. FIRST ACTION ∀ turn: spawn ALL 
 • Design-Doubt (record-only): method APPROACH/default/contract beatable? shape=HYPOTHESIS→record-for-BUILD/owner; NEVER implement (byte-id rules lane). DOUBT mandatory.
 • Reliability: ∀ handle/snapshot freed in finally (ctor refresh()-throw leak!); denied/not-found honest (NOT raw GetLastError); no throw escapes loop; idempotent close; bounded loops.
 • Segfault-Safety: offsets/strides/struct-sizes correct; .ptr never cached stale; struct@call-site; wrong offset SEGFAULTS→prove via self-process integration (alloc in-proc→read-back→assert); CLOSE ∀ handle.
-• Code-Hygiene: NO casts; #private (Win32Error uses private static→flag); full-word names; tsc strict; prettier-clean; alphabetized.
+• Code-Hygiene: NO casts; #private; full-word names; tsc strict; biome-clean; alphabetized.
 • Dead-Code&Dup: by USEFULNESS+REACHABILITY not call-count. zero-ref→(a)useless→DELETE (b)useful-unreachable→KEEP+TODO.md (c)public/exported→KEEP. PE32W/MBI.query() unused→assess. DUP→fold onto existing; NO new abstraction.
 • Ship-Footprint: files[]/deps (declared-unimported|undeclared-used)→ example-only deps in runtime deps!
 • Doc-Fidelity: README/JSDoc exact (README "Memory"→Process drift!); counts; ZERO drift code↔docs.

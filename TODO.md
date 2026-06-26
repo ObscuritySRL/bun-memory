@@ -103,6 +103,16 @@ Maintained alongside the code (see prompts/BUILD.md). `[x]` done; `[ ]` remainin
 
 ### Considered and DECLINED (do not build)
 
+- **Lazy self-replacing arch dispatch** (owner-suggested: on first call,
+  `Object.defineProperty(this, 'uPtr', { value: is32Bit ? uPtr32 : uPtr64 })` to drop the per-call
+  `if (this.is32Bit)` branch — the @bun-win32 lazy-load pattern). MEASURED no gain: the branch costs
+  −0.2 ns/call vs a pre-bound fn (noise, actually marginally faster) and end-to-end uPtr read is 300 ns
+  median both ways (write 2300 ns) — the RPM/WPM syscall swallows it 1500–10000×. @bun-win32 uses lazy
+  bind to defer an *expensive* dlopen/symbol resolve; here the deferred "resource" is one readonly
+  boolean read, so the analogy doesn't carry a cost worth deferring. Downsides: replacing an overloaded
+  method via defineProperty needs a cast (AGENTS: NO casts), per-instance fn objects ×~22 methods, and
+  self-replacing methods are harder to read than a one-line predicted branch. Owner may override; the
+  number says it buys nothing.
 - **force-path lpflOldProtect alloc reuse** (a dedicated #ScratchProtect for the forced-write old-protect
   out-param): forced writes are a rare path (read-only pages), the alloc is 4 bytes, and the per-frame
   protected-write loop is already served by `protection()` once + `write(force=false)`. Adding instance
