@@ -104,6 +104,92 @@ describe.skipIf(!wow64)('WOW64 (live 32-bit target)', () => {
   test('call() is rejected on 32-bit targets', () => {
     expect(() => child!.call(0n, { args: [], returns: FFIType.void } as const)).toThrow(/32-bit/);
   });
+
+  // x86 TArray<T>: { Data ptr@0x00 (4B); int ArrayNum@0x04; int ArrayMax@0x08 } (12 bytes).
+  test('tArrayU32 reads an x86 TArray and writes its count at 0x04', () => {
+    const data = child!.alloc(0x40);
+    child!.u32Array(data, new Uint32Array([0x11111111, 0x22222222, 0xdeadbeef]));
+    const header = child!.alloc(0x10);
+    child!.u32(header + 0x00n, low(data)); // Data ptr (4B)
+    child!.u32(header + 0x04n, 3); // ArrayNum
+    child!.u32(header + 0x08n, 3); // ArrayMax
+    expect([...child!.tArrayU32(header)]).toEqual([0x11111111, 0x22222222, 0xdeadbeef]);
+
+    child!.tArrayU32(header, new Uint32Array([7, 8]));
+    expect(child!.u32(header + 0x04n)).toBe(2); // count written at 0x04, not 0x08
+    expect(child!.u32(header + 0x08n)).toBe(3); // ArrayMax untouched
+    expect([...child!.u32Array(data, 2)]).toEqual([7, 8]);
+  });
+
+  test('tArrayU64 keeps an 8-byte element stride on x86 (only the header narrows)', () => {
+    const data = child!.alloc(0x40);
+    child!.u64Array(data, new BigUint64Array([0x1122334455667788n, 0xffffffffffffffffn]));
+    const header = child!.alloc(0x10);
+    child!.u32(header + 0x00n, low(data));
+    child!.u32(header + 0x04n, 2);
+    expect([...child!.tArrayU64(header)]).toEqual([0x1122334455667788n, 0xffffffffffffffffn]);
+  });
+
+  test('tArrayUPtr reads 4-byte element pointers zero-extended and narrows on write', () => {
+    const data = child!.alloc(0x40);
+    child!.u32Array(data, new Uint32Array([0x00000001, 0x80000002, 0xcafef00d]));
+    const header = child!.alloc(0x10);
+    child!.u32(header + 0x00n, low(data));
+    child!.u32(header + 0x04n, 3);
+    expect([...child!.tArrayUPtr(header)]).toEqual([1n, 0x80000002n, 0xcafef00dn]); // zero-extended
+
+    child!.tArrayUPtr(header, new BigUint64Array([0xan, 0xbn]));
+    expect(child!.u32(header + 0x04n)).toBe(2);
+    expect([...child!.u32Array(data, 2)]).toEqual([0xa, 0xb]); // narrowed to the low dword
+  });
+
+  test('tArrayChar reads/writes an x86 TArray<char> with the null terminator it counts', () => {
+    const data = child!.alloc(0x40);
+    const header = child!.alloc(0x10);
+    child!.u32(header + 0x00n, low(data));
+    child!.string(data, 'hi\0');
+    child!.u32(header + 0x04n, 3);
+    expect(child!.tArrayChar(header)).toBe('hi');
+
+    child!.tArrayChar(header, 'abc');
+    expect(child!.u32(header + 0x04n)).toBe(4); // 3 chars + null, counted at 0x04
+    expect(child!.tArrayChar(header)).toBe('abc');
+  });
+
+  test('tArrayU32 decodes a 12-byte header at a page boundary (no 16-byte over-read)', () => {
+    const data = child!.alloc(0x40);
+    child!.u32Array(data, new Uint32Array([0x0d15ea5e, 0xfeedface]));
+    const page = child!.alloc(0x1000);
+    const header = page + 0x1000n - 0x0cn; // last 12 bytes of a one-page allocation
+    child!.u32(header + 0x00n, low(data));
+    child!.u32(header + 0x04n, 2);
+    child!.u32(header + 0x08n, 2);
+    // A 16-byte (x64) header read would run into the next, unmapped page and throw ERROR_PARTIAL_COPY.
+    expect([...child!.tArrayU32(header)]).toEqual([0x0d15ea5e, 0xfeedface]);
+  });
+
+  // x86 CUtlVector: { int Size@0x00; T* Elements@0x04 (4B) } (8 bytes).
+  test('utlVectorU32 reads an x86 CUtlVector (Elements at 0x04)', () => {
+    const elements = child!.alloc(0x40);
+    child!.u32Array(elements, new Uint32Array([0xaaaa0001, 0x0000cafe, 0xffffffff]));
+    const header = child!.alloc(0x10);
+    child!.u32(header + 0x00n, 3); // Size
+    child!.u32(header + 0x04n, low(elements)); // Elements ptr (4B)
+    expect([...child!.utlVectorU32(header)]).toEqual([0xaaaa0001, 0x0000cafe, 0xffffffff]);
+
+    child!.utlVectorU32(header, new Uint32Array([1, 2]));
+    expect(child!.u32(header + 0x00n)).toBe(2); // size stays at 0x00
+    expect([...child!.u32Array(elements, 2)]).toEqual([1, 2]);
+  });
+
+  test('utlVectorU64 reads an x86 CUtlVector with 8-byte elements', () => {
+    const elements = child!.alloc(0x40);
+    child!.u64Array(elements, new BigUint64Array([10n, 0x8000000000000000n]));
+    const header = child!.alloc(0x10);
+    child!.u32(header + 0x00n, 2);
+    child!.u32(header + 0x04n, low(elements));
+    expect([...child!.utlVectorU64(header)]).toEqual([10n, 0x8000000000000000n]);
+  });
 });
 
 if (!wow64) {

@@ -108,10 +108,12 @@ const WAIT_OBJECT_0 = 0x0000_0000;
  * Many scalar reads utilize `TypedArray` scratches to avoid a second FFI hop, such as calling `bun:ffi.read.*`.
  *
  * The target architecture is detected once at attach via IsWow64Process2 and exposed as `is32Bit`.
- * The pointer primitives (`uPtr`, `uPtrArray`, `follow`, `vTable`, `vFunction`) are width-corrected
- * for 32-bit (WOW64) targets; `call()` rejects them.
- * @todo The engine-container header offsets (`tArray*`, `utlVector*`, `utlLinkedListU64`) still assume
- *   64-bit pointers; width-correct them next (the layout recipe is recorded in TODO.md).
+ * The pointer primitives (`uPtr`, `uPtrArray`, `follow`, `vTable`, `vFunction`) and the engine
+ * containers (`tArray*`, `utlVectorRaw`/`utlVectorU32`/`utlVectorU64`) are width-corrected for 32-bit
+ * (WOW64) targets — x86 `TArray` reads its header at `{Data@0x00 (4B); ArrayNum@0x04}` and x86
+ * `CUtlVector` at `{Size@0x00; Elements@0x04 (4B)}`, with the x64 path byte-identical.
+ * @todo `utlLinkedListU64` and `call()` remain 64-bit only — the x86 CUtlLinkedList header is not
+ *   derivable without a real 32-bit Source target, and `call()` needs an x86 shellcode emitter (TODO.md).
  *
  * @example
  * ```ts
@@ -2086,12 +2088,21 @@ class Process {
   public tArrayChar(address: bigint): string;
   public tArrayChar(address: bigint, value: string, force?: boolean): this;
   public tArrayChar(address: bigint, value?: string, force?: boolean): string | this {
-    this.read(address, this.#Scratch16.u8);
-    const dataPtr = this.#Scratch16.u64[0x00]!;
+    let count: number;
+    let dataPtr: bigint;
+
+    if (this.is32Bit) {
+      // x86 TArray<T>: { Data ptr@0x00 (4B); int ArrayNum@0x04; int ArrayMax@0x08 } (12 bytes).
+      this.read(address, this.#Scratch12.u8);
+      count = this.#Scratch12.u32[0x01]!;
+      dataPtr = BigInt(this.#Scratch12.u32[0x00]!);
+    } else {
+      this.read(address, this.#Scratch16.u8);
+      count = this.#Scratch16.u32[0x02]!;
+      dataPtr = this.#Scratch16.u64[0x00]!;
+    }
 
     if (value === undefined) {
-      const count = this.#Scratch16.u32[0x02]!;
-
       if (count === 0x00) {
         return '';
       }
@@ -2109,7 +2120,7 @@ class Process {
     bytes.copy(scratch);
     scratch[bytes.length] = 0x00;
 
-    this.u32(address + 0x08n, scratch.length, force);
+    this.u32(address + (this.is32Bit ? 0x04n : 0x08n), scratch.length, force);
 
     this.write(dataPtr, scratch, force);
 
@@ -2132,12 +2143,22 @@ class Process {
   public tArrayF32(address: bigint): Float32Array;
   public tArrayF32(address: bigint, values: Float32Array, force?: boolean): this;
   public tArrayF32(address: bigint, values?: Float32Array, force?: boolean): Float32Array | this {
-    this.read(address, this.#Scratch16.u8);
-    const dataPtr = this.#Scratch16.u64[0x00]!;
+    let count: number;
+    let dataPtr: bigint;
+
+    if (this.is32Bit) {
+      // x86 TArray<T>: { Data ptr@0x00 (4B); int ArrayNum@0x04; int ArrayMax@0x08 } (12 bytes).
+      this.read(address, this.#Scratch12.u8);
+      count = this.#Scratch12.u32[0x01]!;
+      dataPtr = BigInt(this.#Scratch12.u32[0x00]!);
+    } else {
+      this.read(address, this.#Scratch16.u8);
+      count = this.#Scratch16.u32[0x02]!;
+      dataPtr = this.#Scratch16.u64[0x00]!;
+    }
 
     if (values === undefined) {
-      const count = this.#Scratch16.u32[0x02]!,
-        scratch = new Float32Array(count);
+      const scratch = new Float32Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2148,7 +2169,7 @@ class Process {
       return scratch;
     }
 
-    this.u32(address + 0x08n, values.length, force);
+    this.u32(address + (this.is32Bit ? 0x04n : 0x08n), values.length, force);
 
     this.write(dataPtr, values, force);
 
@@ -2171,12 +2192,22 @@ class Process {
   public tArrayF64(address: bigint): Float64Array;
   public tArrayF64(address: bigint, values: Float64Array, force?: boolean): this;
   public tArrayF64(address: bigint, values?: Float64Array, force?: boolean): Float64Array | this {
-    this.read(address, this.#Scratch16.u8);
-    const dataPtr = this.#Scratch16.u64[0x00]!;
+    let count: number;
+    let dataPtr: bigint;
+
+    if (this.is32Bit) {
+      // x86 TArray<T>: { Data ptr@0x00 (4B); int ArrayNum@0x04; int ArrayMax@0x08 } (12 bytes).
+      this.read(address, this.#Scratch12.u8);
+      count = this.#Scratch12.u32[0x01]!;
+      dataPtr = BigInt(this.#Scratch12.u32[0x00]!);
+    } else {
+      this.read(address, this.#Scratch16.u8);
+      count = this.#Scratch16.u32[0x02]!;
+      dataPtr = this.#Scratch16.u64[0x00]!;
+    }
 
     if (values === undefined) {
-      const count = this.#Scratch16.u32[0x02]!,
-        scratch = new Float64Array(count);
+      const scratch = new Float64Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2187,7 +2218,7 @@ class Process {
       return scratch;
     }
 
-    this.u32(address + 0x08n, values.length, force);
+    this.u32(address + (this.is32Bit ? 0x04n : 0x08n), values.length, force);
 
     this.write(dataPtr, values, force);
 
@@ -2210,12 +2241,22 @@ class Process {
   public tArrayI16(address: bigint): Int16Array;
   public tArrayI16(address: bigint, values: Int16Array, force?: boolean): this;
   public tArrayI16(address: bigint, values?: Int16Array, force?: boolean): Int16Array | this {
-    this.read(address, this.#Scratch16.u8);
-    const dataPtr = this.#Scratch16.u64[0x00]!;
+    let count: number;
+    let dataPtr: bigint;
+
+    if (this.is32Bit) {
+      // x86 TArray<T>: { Data ptr@0x00 (4B); int ArrayNum@0x04; int ArrayMax@0x08 } (12 bytes).
+      this.read(address, this.#Scratch12.u8);
+      count = this.#Scratch12.u32[0x01]!;
+      dataPtr = BigInt(this.#Scratch12.u32[0x00]!);
+    } else {
+      this.read(address, this.#Scratch16.u8);
+      count = this.#Scratch16.u32[0x02]!;
+      dataPtr = this.#Scratch16.u64[0x00]!;
+    }
 
     if (values === undefined) {
-      const count = this.#Scratch16.u32[0x02]!,
-        scratch = new Int16Array(count);
+      const scratch = new Int16Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2226,7 +2267,7 @@ class Process {
       return scratch;
     }
 
-    this.u32(address + 0x08n, values.length, force);
+    this.u32(address + (this.is32Bit ? 0x04n : 0x08n), values.length, force);
 
     this.write(dataPtr, values, force);
 
@@ -2249,12 +2290,22 @@ class Process {
   public tArrayI32(address: bigint): Int32Array;
   public tArrayI32(address: bigint, values: Int32Array, force?: boolean): this;
   public tArrayI32(address: bigint, values?: Int32Array, force?: boolean): Int32Array | this {
-    this.read(address, this.#Scratch16.u8);
-    const dataPtr = this.#Scratch16.u64[0x00]!;
+    let count: number;
+    let dataPtr: bigint;
+
+    if (this.is32Bit) {
+      // x86 TArray<T>: { Data ptr@0x00 (4B); int ArrayNum@0x04; int ArrayMax@0x08 } (12 bytes).
+      this.read(address, this.#Scratch12.u8);
+      count = this.#Scratch12.u32[0x01]!;
+      dataPtr = BigInt(this.#Scratch12.u32[0x00]!);
+    } else {
+      this.read(address, this.#Scratch16.u8);
+      count = this.#Scratch16.u32[0x02]!;
+      dataPtr = this.#Scratch16.u64[0x00]!;
+    }
 
     if (values === undefined) {
-      const count = this.#Scratch16.u32[0x02]!,
-        scratch = new Int32Array(count);
+      const scratch = new Int32Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2265,7 +2316,7 @@ class Process {
       return scratch;
     }
 
-    this.u32(address + 0x08n, values.length, force);
+    this.u32(address + (this.is32Bit ? 0x04n : 0x08n), values.length, force);
 
     this.write(dataPtr, values, force);
 
@@ -2288,12 +2339,22 @@ class Process {
   public tArrayI64(address: bigint): BigInt64Array;
   public tArrayI64(address: bigint, values: BigInt64Array, force?: boolean): this;
   public tArrayI64(address: bigint, values?: BigInt64Array, force?: boolean): BigInt64Array | this {
-    this.read(address, this.#Scratch16.u8);
-    const dataPtr = this.#Scratch16.u64[0x00]!;
+    let count: number;
+    let dataPtr: bigint;
+
+    if (this.is32Bit) {
+      // x86 TArray<T>: { Data ptr@0x00 (4B); int ArrayNum@0x04; int ArrayMax@0x08 } (12 bytes).
+      this.read(address, this.#Scratch12.u8);
+      count = this.#Scratch12.u32[0x01]!;
+      dataPtr = BigInt(this.#Scratch12.u32[0x00]!);
+    } else {
+      this.read(address, this.#Scratch16.u8);
+      count = this.#Scratch16.u32[0x02]!;
+      dataPtr = this.#Scratch16.u64[0x00]!;
+    }
 
     if (values === undefined) {
-      const count = this.#Scratch16.u32[0x02]!,
-        scratch = new BigInt64Array(count);
+      const scratch = new BigInt64Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2304,7 +2365,7 @@ class Process {
       return scratch;
     }
 
-    this.u32(address + 0x08n, values.length, force);
+    this.u32(address + (this.is32Bit ? 0x04n : 0x08n), values.length, force);
 
     this.write(dataPtr, values, force);
 
@@ -2327,12 +2388,22 @@ class Process {
   public tArrayI8(address: bigint): Int8Array;
   public tArrayI8(address: bigint, values: Int8Array, force?: boolean): this;
   public tArrayI8(address: bigint, values?: Int8Array, force?: boolean): Int8Array | this {
-    this.read(address, this.#Scratch16.u8);
-    const dataPtr = this.#Scratch16.u64[0x00]!;
+    let count: number;
+    let dataPtr: bigint;
+
+    if (this.is32Bit) {
+      // x86 TArray<T>: { Data ptr@0x00 (4B); int ArrayNum@0x04; int ArrayMax@0x08 } (12 bytes).
+      this.read(address, this.#Scratch12.u8);
+      count = this.#Scratch12.u32[0x01]!;
+      dataPtr = BigInt(this.#Scratch12.u32[0x00]!);
+    } else {
+      this.read(address, this.#Scratch16.u8);
+      count = this.#Scratch16.u32[0x02]!;
+      dataPtr = this.#Scratch16.u64[0x00]!;
+    }
 
     if (values === undefined) {
-      const count = this.#Scratch16.u32[0x02]!,
-        scratch = new Int8Array(count);
+      const scratch = new Int8Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2343,7 +2414,7 @@ class Process {
       return scratch;
     }
 
-    this.u32(address + 0x08n, values.length, force);
+    this.u32(address + (this.is32Bit ? 0x04n : 0x08n), values.length, force);
 
     this.write(dataPtr, values, force);
 
@@ -2368,12 +2439,22 @@ class Process {
   public tArrayRaw(address: bigint, dataSize: number): Buffer[];
   public tArrayRaw(address: bigint, values: Buffer[], force?: boolean): this;
   public tArrayRaw(address: bigint, dataSizeOrValues: number | Buffer[], force?: boolean): Buffer[] | this {
-    this.read(address, this.#Scratch16.u8);
-    const dataPtr = this.#Scratch16.u64[0x00]!;
+    let count: number;
+    let dataPtr: bigint;
+
+    if (this.is32Bit) {
+      // x86 TArray<T>: { Data ptr@0x00 (4B); int ArrayNum@0x04; int ArrayMax@0x08 } (12 bytes).
+      this.read(address, this.#Scratch12.u8);
+      count = this.#Scratch12.u32[0x01]!;
+      dataPtr = BigInt(this.#Scratch12.u32[0x00]!);
+    } else {
+      this.read(address, this.#Scratch16.u8);
+      count = this.#Scratch16.u32[0x02]!;
+      dataPtr = this.#Scratch16.u64[0x00]!;
+    }
 
     if (typeof dataSizeOrValues === 'number') {
-      const count = this.#Scratch16.u32[0x02]!,
-        dataSize = dataSizeOrValues;
+      const dataSize = dataSizeOrValues;
 
       if (count === 0) {
         return [];
@@ -2395,7 +2476,7 @@ class Process {
     const values = dataSizeOrValues;
 
     if (values.length === 0) {
-      this.u32(address + 0x08n, 0, force);
+      this.u32(address + (this.is32Bit ? 0x04n : 0x08n), 0, force);
       return this;
     }
 
@@ -2406,7 +2487,7 @@ class Process {
       values[i]!.copy(scratch, i * dataSize);
     }
 
-    this.u32(address + 0x08n, values.length, force);
+    this.u32(address + (this.is32Bit ? 0x04n : 0x08n), values.length, force);
 
     this.write(dataPtr, scratch, force);
 
@@ -2429,12 +2510,22 @@ class Process {
   public tArrayU16(address: bigint): Uint16Array;
   public tArrayU16(address: bigint, values: Uint16Array, force?: boolean): this;
   public tArrayU16(address: bigint, values?: Uint16Array, force?: boolean): Uint16Array | this {
-    this.read(address, this.#Scratch16.u8);
-    const dataPtr = this.#Scratch16.u64[0x00]!;
+    let count: number;
+    let dataPtr: bigint;
+
+    if (this.is32Bit) {
+      // x86 TArray<T>: { Data ptr@0x00 (4B); int ArrayNum@0x04; int ArrayMax@0x08 } (12 bytes).
+      this.read(address, this.#Scratch12.u8);
+      count = this.#Scratch12.u32[0x01]!;
+      dataPtr = BigInt(this.#Scratch12.u32[0x00]!);
+    } else {
+      this.read(address, this.#Scratch16.u8);
+      count = this.#Scratch16.u32[0x02]!;
+      dataPtr = this.#Scratch16.u64[0x00]!;
+    }
 
     if (values === undefined) {
-      const count = this.#Scratch16.u32[0x02]!,
-        scratch = new Uint16Array(count);
+      const scratch = new Uint16Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2445,7 +2536,7 @@ class Process {
       return scratch;
     }
 
-    this.u32(address + 0x08n, values.length, force);
+    this.u32(address + (this.is32Bit ? 0x04n : 0x08n), values.length, force);
 
     this.write(dataPtr, values, force);
 
@@ -2468,12 +2559,22 @@ class Process {
   public tArrayU32(address: bigint): Uint32Array;
   public tArrayU32(address: bigint, values: Uint32Array, force?: boolean): this;
   public tArrayU32(address: bigint, values?: Uint32Array, force?: boolean): Uint32Array | this {
-    this.read(address, this.#Scratch16.u8);
-    const dataPtr = this.#Scratch16.u64[0x00]!;
+    let count: number;
+    let dataPtr: bigint;
+
+    if (this.is32Bit) {
+      // x86 TArray<T>: { Data ptr@0x00 (4B); int ArrayNum@0x04; int ArrayMax@0x08 } (12 bytes).
+      this.read(address, this.#Scratch12.u8);
+      count = this.#Scratch12.u32[0x01]!;
+      dataPtr = BigInt(this.#Scratch12.u32[0x00]!);
+    } else {
+      this.read(address, this.#Scratch16.u8);
+      count = this.#Scratch16.u32[0x02]!;
+      dataPtr = this.#Scratch16.u64[0x00]!;
+    }
 
     if (values === undefined) {
-      const count = this.#Scratch16.u32[0x02]!,
-        scratch = new Uint32Array(count);
+      const scratch = new Uint32Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2484,7 +2585,7 @@ class Process {
       return scratch;
     }
 
-    this.u32(address + 0x08n, values.length, force);
+    this.u32(address + (this.is32Bit ? 0x04n : 0x08n), values.length, force);
 
     this.write(dataPtr, values, force);
 
@@ -2507,12 +2608,22 @@ class Process {
   public tArrayU64(address: bigint): BigUint64Array;
   public tArrayU64(address: bigint, values: BigUint64Array, force?: boolean): this;
   public tArrayU64(address: bigint, values?: BigUint64Array, force?: boolean): BigUint64Array | this {
-    this.read(address, this.#Scratch16.u8);
-    const dataPtr = this.#Scratch16.u64[0x00]!;
+    let count: number;
+    let dataPtr: bigint;
+
+    if (this.is32Bit) {
+      // x86 TArray<T>: { Data ptr@0x00 (4B); int ArrayNum@0x04; int ArrayMax@0x08 } (12 bytes).
+      this.read(address, this.#Scratch12.u8);
+      count = this.#Scratch12.u32[0x01]!;
+      dataPtr = BigInt(this.#Scratch12.u32[0x00]!);
+    } else {
+      this.read(address, this.#Scratch16.u8);
+      count = this.#Scratch16.u32[0x02]!;
+      dataPtr = this.#Scratch16.u64[0x00]!;
+    }
 
     if (values === undefined) {
-      const count = this.#Scratch16.u32[0x02]!,
-        scratch = new BigUint64Array(count);
+      const scratch = new BigUint64Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2523,7 +2634,7 @@ class Process {
       return scratch;
     }
 
-    this.u32(address + 0x08n, values.length, force);
+    this.u32(address + (this.is32Bit ? 0x04n : 0x08n), values.length, force);
 
     this.write(dataPtr, values, force);
 
@@ -2546,12 +2657,22 @@ class Process {
   public tArrayU8(address: bigint): Uint8Array;
   public tArrayU8(address: bigint, values: Uint8Array, force?: boolean): this;
   public tArrayU8(address: bigint, values?: Uint8Array, force?: boolean): Uint8Array | this {
-    this.read(address, this.#Scratch16.u8);
-    const dataPtr = this.#Scratch16.u64[0x00]!;
+    let count: number;
+    let dataPtr: bigint;
+
+    if (this.is32Bit) {
+      // x86 TArray<T>: { Data ptr@0x00 (4B); int ArrayNum@0x04; int ArrayMax@0x08 } (12 bytes).
+      this.read(address, this.#Scratch12.u8);
+      count = this.#Scratch12.u32[0x01]!;
+      dataPtr = BigInt(this.#Scratch12.u32[0x00]!);
+    } else {
+      this.read(address, this.#Scratch16.u8);
+      count = this.#Scratch16.u32[0x02]!;
+      dataPtr = this.#Scratch16.u64[0x00]!;
+    }
 
     if (values === undefined) {
-      const count = this.#Scratch16.u32[0x02]!,
-        scratch = new Uint8Array(count);
+      const scratch = new Uint8Array(count);
 
       if (count === 0) {
         return scratch;
@@ -2562,7 +2683,7 @@ class Process {
       return scratch;
     }
 
-    this.u32(address + 0x08n, values.length, force);
+    this.u32(address + (this.is32Bit ? 0x04n : 0x08n), values.length, force);
 
     this.write(dataPtr, values, force);
 
@@ -2585,6 +2706,41 @@ class Process {
   public tArrayUPtr(address: bigint): BigUint64Array;
   public tArrayUPtr(address: bigint, values: BigUint64Array, force?: boolean): this;
   public tArrayUPtr(address: bigint, values?: BigUint64Array, force?: boolean): BigUint64Array | this {
+    if (this.is32Bit) {
+      // x86 TArray<T*>: 12-byte header + 4-byte element pointers; widen into the BigUint64Array.
+      this.read(address, this.#Scratch12.u8);
+      const count = this.#Scratch12.u32[0x01]!;
+      const dataPtr = BigInt(this.#Scratch12.u32[0x00]!);
+
+      if (values === undefined) {
+        const result = new BigUint64Array(count);
+
+        if (count === 0) {
+          return result;
+        }
+
+        const scratch = this.u32Array(dataPtr, count);
+
+        for (let index = 0; index < count; index++) {
+          result[index] = BigInt(scratch[index]!);
+        }
+
+        return result;
+      }
+
+      const scratch = new Uint32Array(values.length);
+
+      for (let index = 0; index < values.length; index++) {
+        scratch[index] = Number(BigInt.asUintN(0x20, values[index]!));
+      }
+
+      this.u32(address + 0x04n, values.length, force);
+
+      this.u32Array(dataPtr, scratch, force);
+
+      return this;
+    }
+
     if (values === undefined) {
       return this.tArrayU64(address);
     }
@@ -2609,12 +2765,21 @@ class Process {
   public tArrayWChar(address: bigint): string;
   public tArrayWChar(address: bigint, value: string, force?: boolean): this;
   public tArrayWChar(address: bigint, value?: string, force?: boolean): string | this {
-    this.read(address, this.#Scratch16.u8);
-    const dataPtr = this.#Scratch16.u64[0x00]!;
+    let count: number;
+    let dataPtr: bigint;
+
+    if (this.is32Bit) {
+      // x86 TArray<T>: { Data ptr@0x00 (4B); int ArrayNum@0x04; int ArrayMax@0x08 } (12 bytes).
+      this.read(address, this.#Scratch12.u8);
+      count = this.#Scratch12.u32[0x01]!;
+      dataPtr = BigInt(this.#Scratch12.u32[0x00]!);
+    } else {
+      this.read(address, this.#Scratch16.u8);
+      count = this.#Scratch16.u32[0x02]!;
+      dataPtr = this.#Scratch16.u64[0x00]!;
+    }
 
     if (value === undefined) {
-      const count = this.#Scratch16.u32[0x02]!;
-
       if (count === 0) {
         return '';
       }
@@ -2631,7 +2796,7 @@ class Process {
     scratch.write(value, 0, 'utf16le');
     scratch.writeUInt16LE(0x0000, value.length * 0x02);
 
-    this.u32(address + 0x08n, value.length + 0x01, force);
+    this.u32(address + (this.is32Bit ? 0x04n : 0x08n), value.length + 0x01, force);
 
     this.write(dataPtr, scratch, force);
 
@@ -3056,11 +3221,22 @@ class Process {
   public utlVectorRaw(address: bigint, elementSize: number): Uint8Array;
   public utlVectorRaw(address: bigint, elementSize: number, values: Uint8Array, force?: boolean): this;
   public utlVectorRaw(address: bigint, elementSize: number, values?: Uint8Array, force?: boolean): Uint8Array | this {
-    this.read(address, this.#Scratch16.u8);
-    const elementsPtr = this.#Scratch16.u64[0x01]!;
+    let elementsPtr: bigint;
+    let size: number;
+
+    if (this.is32Bit) {
+      // x86 CUtlVector: { int Size@0x00; T* Elements@0x04 (4B) } (8 bytes).
+      this.read(address, this.#Scratch8.u8);
+      elementsPtr = BigInt(this.#Scratch8.u32[0x01]!);
+      size = this.#Scratch8.u32[0x00]!;
+    } else {
+      this.read(address, this.#Scratch16.u8);
+      elementsPtr = this.#Scratch16.u64[0x01]!;
+      size = this.#Scratch16.u32[0x00]!;
+    }
 
     if (values === undefined) {
-      const count = this.#Scratch16.u32[0x00]!;
+      const count = size;
 
       if (count === 0 || elementsPtr === 0n) {
         return new Uint8Array(0);
@@ -3107,12 +3283,21 @@ class Process {
   public utlVectorU32(address: bigint): Uint32Array;
   public utlVectorU32(address: bigint, values: Uint32Array, force?: boolean): this;
   public utlVectorU32(address: bigint, values?: Uint32Array, force?: boolean): Uint32Array | this {
-    this.read(address, this.#Scratch16.u8);
-    const elementsPtr = this.#Scratch16.u64[0x01]!;
+    let elementsPtr: bigint;
+    let size: number;
+
+    if (this.is32Bit) {
+      // x86 CUtlVector: { int Size@0x00; T* Elements@0x04 (4B) } (8 bytes).
+      this.read(address, this.#Scratch8.u8);
+      elementsPtr = BigInt(this.#Scratch8.u32[0x01]!);
+      size = this.#Scratch8.u32[0x00]!;
+    } else {
+      this.read(address, this.#Scratch16.u8);
+      elementsPtr = this.#Scratch16.u64[0x01]!;
+      size = this.#Scratch16.u32[0x00]!;
+    }
 
     if (values === undefined) {
-      const size = this.#Scratch16.u32[0x00]!;
-
       if (size === 0 || elementsPtr === 0n) {
         return new Uint32Array(0);
       }
@@ -3151,12 +3336,21 @@ class Process {
   public utlVectorU64(address: bigint): BigUint64Array;
   public utlVectorU64(address: bigint, values: BigUint64Array, force?: boolean): this;
   public utlVectorU64(address: bigint, values?: BigUint64Array, force?: boolean): BigUint64Array | this {
-    this.read(address, this.#Scratch16.u8);
-    const elementsPtr = this.#Scratch16.u64[0x01]!;
+    let elementsPtr: bigint;
+    let size: number;
+
+    if (this.is32Bit) {
+      // x86 CUtlVector: { int Size@0x00; T* Elements@0x04 (4B) } (8 bytes).
+      this.read(address, this.#Scratch8.u8);
+      elementsPtr = BigInt(this.#Scratch8.u32[0x01]!);
+      size = this.#Scratch8.u32[0x00]!;
+    } else {
+      this.read(address, this.#Scratch16.u8);
+      elementsPtr = this.#Scratch16.u64[0x01]!;
+      size = this.#Scratch16.u32[0x00]!;
+    }
 
     if (values === undefined) {
-      const size = this.#Scratch16.u32[0x00]!;
-
       if (size === 0 || elementsPtr === 0n) {
         return new BigUint64Array(0);
       }

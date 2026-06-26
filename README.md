@@ -165,8 +165,9 @@ while (true) {
 
 - Windows only. Bun runtime required.
 - Targets are 64-bit by default. 32-bit (WOW64) targets are detected at attach (`is32Bit`); the pointer
-  primitives (`uPtr`, `uPtrArray`, `follow`, `vTable`, `vFunction`) are width-corrected for them, while
-  the engine-container accessors (`tArray*`, `utlVector*`) and `call()` remain 64-bit only.
+  primitives (`uPtr`, `uPtrArray`, `follow`, `vTable`, `vFunction`) and the engine containers (`tArray*`,
+  `utlVectorRaw`/`utlVectorU32`/`utlVectorU64`) are width-corrected for them, while `utlLinkedListU64`
+  and `call()` remain 64-bit only.
 
 ---
 

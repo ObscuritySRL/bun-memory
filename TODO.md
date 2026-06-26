@@ -16,6 +16,18 @@ Maintained alongside the code (see prompts/BUILD.md). `[x]` done; `[ ]` remainin
 
 ## Done — this session
 
+- [x] **feat(32-bit containers):** width-corrected the engine containers behind `is32Bit` (x64 path
+  byte-identical, moved verbatim into the `else`). tArray\* (14 methods) read the x86 12-byte header via
+  #Scratch12 (Data ptr@0x00 4B, ArrayNum@0x04) and write count at +0x04; tArrayUPtr widens 4-byte element
+  pointers (zero-extended) and narrows on write. utlVectorRaw/U32/U64 read the x86 8-byte header via
+  #Scratch8 (Size@0x00, Elements@0x04 4B), size write stays @0x00. Smaller scratches avoid an
+  ERROR_PARTIAL_COPY over-read past the smaller x86 struct at a page edge. Proven live against a spawned
+  SysWOW64 process (7 new wow64 tests incl. the page-boundary trap). utlLinkedListU64 + call() stay
+  64-bit only (see remaining). Design huddle: assessor (11/11 live) + adversary, both vs primary sources.
+- [x] **fix(extensions):** installed the missing `.ptr` getter on Float16Array (the extension advertised
+  "all TypedArray types" but omitted it; BufferLike already includes it). Pinned by a test.
+- [x] **fix(utlvector):** utlVectorU32/U64 now short-circuit to empty on a null elements pointer with a
+  reported size, matching utlVectorRaw (was read(0n) → Win32Error). Two new tests.
 - [x] **fix(tarray):** tArrayChar/tArrayWChar writes now emit the trailing null terminator their header
   count includes (it was counted but never written, leaving stale bytes in the target backing store; the
   library's own count-1 read masked it). Pinned by two new self-process write tests asserting the
@@ -73,20 +85,6 @@ Maintained alongside the code (see prompts/BUILD.md). `[x]` done; `[ ]` remainin
 
 ## CAPABILITY — remaining (panel B)
 
-- [ ] **32-bit width-correction — engine containers (the locked recipe; primitives already shipped).**
-  Gate each behind `is32Bit`, x64 path unchanged. Zero-extend every 4-byte pointer via the Uint32 view
-  (`BigInt(u32)`); write the low dword (`Number(BigInt.asUintN(0x20, value))`). Read the x86 header into
-  the 12-byte #Scratch12 (TArray) / 8-byte #Scratch8 (CUtlVector) rather than #Scratch16 to avoid a
-  page-edge ERROR_PARTIAL_COPY past the smaller x86 struct.
-  - tArray* (14 methods): UE3 TArray<T> is x86 {Data ptr@0x00(4B); int ArrayNum@0x04; int ArrayMax@0x08}
-    (vs x64 Data@0x00(8B); ArrayNum@0x08). So dataPtr = BigInt(u32[0]); count = u32[1] (@0x04); write
-    count via u32(address + 0x04n, len). Element-data widths are arch-independent for every method EXCEPT
-    tArrayUPtr, whose elements are 4-byte pointers on x86 — read as Uint32Array(count) and widen into the
-    BigUint64Array (do NOT touch tArrayU64/I64/F64 element strides).
-  - utlVectorRaw/U32/U64: x86 {int Size@0x00; T* Elements@0x04(4B)} (vs x64 Elements@0x08 after pad). So
-    count = u32[0] (@0x00, unchanged); elementsPtr = BigInt(u32[1]) (@0x04); count write stays @0x00.
-  - Verify each live by writing synthetic x86-layout structures into a spawned SysWOW64 process and reading
-    them back (extend example/wow64.integration.ts); benchmark x64 tArrayU32 unchanged.
 - [ ] **32-bit utlLinkedListU64.** LOW confidence: CUtlLinkedList's x86 header (where the 4-byte m_pMemory
   lands; whether head/capacity shift) is a non-standard custom struct not derivable from canonical Source.
   Node stride stays 0x10 (uint64 value 8-aligned even on x86). CUtlLinkedList is a Source/CS2 (x64) container
