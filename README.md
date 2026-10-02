@@ -1,5 +1,7 @@
 # bun-memory
 
+Development moved to [bun-win32](https://github.com/ObscuritySRL/bun-win32/tree/main/packages/memory#readme). Install `@bun-win32/memory` or `bun-memory` for the current release.
+
 Blazing fast, high-performance Windows process memory manipulation for [Bun](https://bun.sh/).
 
 ## Overview
